@@ -1,11 +1,15 @@
 [package]
-name = "eframe_template"
+name = "enlil"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 eframe = "0.30"
 egui = "0.30"
-rand = "0.8"
-chrono = "0.4"
-epaint = "0.22"  # Для дополнительных возможностей стилизации
+crossbeam-channel = "0.5"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+umya-spreadsheet = "2.2.3"
+# rand = "0.8"
+# chrono = "0.4"
+# epaint = "0.22"  # Для дополнительных возможностей стилизации

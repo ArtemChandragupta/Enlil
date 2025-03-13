@@ -37,29 +37,27 @@ impl eframe::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("eframe template");
+            ui.heading("Данные с сервера");
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("data_grid")
+                    .num_columns(2)
+                    .spacing([40.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        // Заголовки таблицы
+                        ui.strong("Число 1");
+                        ui.strong("Число 2");
+                        ui.end_row();
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
-            });
+                        // Отображаем данные в порядке очереди (новые сверху)
+                        for entry in &self.data {
+                            ui.label(entry.num1.to_string());
+                            ui.label(entry.num2.to_string());
+                            ui.end_row();
+                        }
+                    });
+            }); 
         });
     }
 }
