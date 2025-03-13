@@ -3,13 +3,14 @@ name = "enlil"
 version = "0.1.0"
 edition = "2021"
 
+# [lints]
+# workspace = true
+
 [dependencies]
-eframe = "0.30"
-egui = "0.30"
+eframe = { version = "0.30" }
+egui_extras = { version = "*", features = ["all_loaders"] }
+image = { version = "0.25", features = ["jpeg", "png"] }
 crossbeam-channel = "0.5"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 serde = { version = "1.0", features = ["derive"] }
 umya-spreadsheet = "2.2.3"
-# rand = "0.8"
-# chrono = "0.4"
-# epaint = "0.22"  # Для дополнительных возможностей стилизации

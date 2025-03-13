@@ -23,7 +23,7 @@ struct ServerData {
     resp_noz: VecDeque<String>,
     resp_203: VecDeque<String>,
     resp_204: VecDeque<String>,
-    metrics: VecDeque<String>,
+    // metrics: VecDeque<String>,
 }
 
 // Основное приложение
@@ -46,9 +46,13 @@ fn main() {
     let _ = eframe::run_native(
         "Server Monitoring System",
         options,
-        Box::new(|_cc| Ok(Box::new(MonitoringApp { 
+        Box::new(|cc| {
+            // This gives us image support:
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+
+            Ok(Box::new(MonitoringApp {
             shared_data: shared_data.clone() 
-        }))),
+        }))}),
     );
 }
 
@@ -127,11 +131,11 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 
             // Обновление общих данных
             let mut data = shared_data.lock().unwrap();
-            data.resp_noz.push_back(resp_noz);
-            data.resp_con.push_back(resp_con);
-            data.resp_203.push_back(resp_203);
-            data.resp_204.push_back(resp_204);
-            data.metrics.push_back(savestr.clone());
+            data.resp_noz.push_front(resp_noz);
+            data.resp_con.push_front(resp_con);
+            data.resp_203.push_front(resp_203);
+            data.resp_204.push_front(resp_204);
+            // data.metrics.push_back(savestr.clone());
 
             // Ограничение истории
             // if data.resp_noz.len() > 10 { data.resp_noz.pop_front(); }
@@ -155,9 +159,13 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 // Графический интерфейс
 impl eframe::App for MonitoringApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_secs(1));
+        ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Real-time Server Monitoring");
+            ui.horizontal(|ui| {
+                let egui_icon = egui::include_image!("../assets/icon.jpg");
+                ui.add(egui::Image::new(egui_icon.clone()));
+                ui.heading("Real-time Server Monitoring");
+            });
             ui.separator();
 
             let data = self.shared_data.lock().unwrap();
