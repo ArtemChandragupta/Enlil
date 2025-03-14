@@ -3,7 +3,6 @@ use eframe::egui;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::fs::OpenOptions;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,7 +13,6 @@ const IP_CON: &str = "127.0.0.28";
 const IP_203: &str = "127.0.0.203";
 const IP_204: &str = "127.0.0.204";
 const SERVER_PORT: u16 = 9000;
-const LOG_FILE: &str = "nflow_out.txt";
 
 // Структура для хранения данных
 #[derive(Default)]
@@ -58,14 +56,7 @@ fn main() {
 
 // Поток сбора данных
 fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
-    let log_file = Arc::new(Mutex::new(
-        OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(LOG_FILE)
-            .expect("Failed to open log file"),
-    ));
-    
+
     let mut book = umya_spreadsheet::new_file();
     let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
     sheet.get_cell_mut((1, 1)).set_value("Time".to_string());
@@ -90,13 +81,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
     sheet.get_cell_mut((20,1)).set_value("sflow_uneven".to_string());
     let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
     let mut row = 2;
-
-    let headstrf = "Time\tFlow, kg/s\tDeltaP, Pa\tP, Pa\tTemp, K\tTemp2, K\n";
-    
-    {
-        let mut log = log_file.lock().unwrap();
-        writeln!(log, "{}", headstrf).expect("Failed to write to log file");
-    }
 
     loop {
         thread::sleep(std::time::Duration::from_secs(1));
@@ -164,15 +148,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             let sflow_fract  = sflow_sum / mflow * 100.0;
             let sflow_uneven = 100.0 * (sflow1.max(sflow2).max(sflow3).max(sflow4) - sflow1.min(sflow2).min(sflow3).min(sflow4)) / sflow_ave;
 
-            // Формирование строки для сохранения
-            let savestr = format!(
-                "{}\t{:.6}\t{:.2}\t{:.2}\t{:.3}\t{:.3}\n",
-                timestamp, mflow, 
-                resp_noz.parse::<f64>().unwrap_or(0.0),
-                resp_con.parse::<f64>().unwrap_or(0.0),
-                t1ci, t2i
-            );
-
             // Обновление общих данных
             let mut data = shared_data.lock().unwrap();
             data.resp_noz.push_front(resp_noz);
@@ -205,10 +180,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             sheet.get_cell_mut((20,row)).set_value(sflow_uneven.to_string());
             let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
             row += 1;
-
-            // Запись в лог
-            let mut log = log_file.lock().unwrap();
-            writeln!(log, "{}", savestr).expect("Log write failed");
         }
     }
 }
@@ -257,21 +228,10 @@ impl eframe::App for MonitoringApp {
                         }
                     });
             });
-
-            // ui.separator();
-            // 
-            // // Метрики
-            // ui.heading("Calculated Metrics");
-            // egui::ScrollArea::vertical().show(ui, |ui| {
-            //     for metric in &data.metrics {
-            //         ui.label(metric);
-            //     }
-            // });
         });
     }
 }
 
-// Остальные функции остаются без изменений
 fn fetch_data_from_server(ip: &str, port: u16) -> Result<String, std::io::Error> {
     let mut stream = TcpStream::connect((ip, port))?;
     stream.write_all(b"rffff0")?;
