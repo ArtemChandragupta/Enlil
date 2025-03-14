@@ -21,7 +21,6 @@ struct ServerData {
     resp_noz: VecDeque<String>,
     resp_203: VecDeque<String>,
     resp_204: VecDeque<String>,
-    // metrics: VecDeque<String>,
 }
 
 // Основное приложение
@@ -57,29 +56,7 @@ fn main() {
 // Поток сбора данных
 fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 
-    let mut book = umya_spreadsheet::new_file();
-    let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
-    sheet.get_cell_mut((1, 1)).set_value("Time".to_string());
-    sheet.get_cell_mut((2, 1)).set_value("Flow, kg/s".to_string());
-    sheet.get_cell_mut((3, 1)).set_value("DeltaP, Pa".to_string());
-    sheet.get_cell_mut((4, 1)).set_value("P,Pa".to_string());
-    sheet.get_cell_mut((5, 1)).set_value("t1ci".to_string());
-    sheet.get_cell_mut((6, 1)).set_value("t2i".to_string());
-    sheet.get_cell_mut((7, 1)).set_value("pstat1".to_string());
-    sheet.get_cell_mut((8, 1)).set_value("ppito1".to_string());
-    sheet.get_cell_mut((9, 1)).set_value("pstat2".to_string());
-    sheet.get_cell_mut((10,1)).set_value("ppito2".to_string());
-    sheet.get_cell_mut((11,1)).set_value("pstat3".to_string());
-    sheet.get_cell_mut((12,1)).set_value("ppito3".to_string());
-    sheet.get_cell_mut((13,1)).set_value("pstat4".to_string());
-    sheet.get_cell_mut((14,1)).set_value("ppito4".to_string());
-    sheet.get_cell_mut((15,1)).set_value("sflow1".to_string());
-    sheet.get_cell_mut((16,1)).set_value("sflow2".to_string());
-    sheet.get_cell_mut((17,1)).set_value("sflow3".to_string());
-    sheet.get_cell_mut((18,1)).set_value("sflow4".to_string());
-    sheet.get_cell_mut((19,1)).set_value("sflow_fract".to_string());
-    sheet.get_cell_mut((20,1)).set_value("sflow_uneven".to_string());
-    let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
+    let mut book = initialize_excel_file();
     let mut row = 2;
 
     loop {
@@ -159,31 +136,25 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             data.resp_con.push_front(resp_con);
             data.resp_203.push_front(resp_203);
             data.resp_204.push_front(resp_204);
-            // data.metrics.push_front(savestr.clone());
 
-            // Запись в Excel
-            let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
-            sheet.get_cell_mut((1, row)).set_value(timestamp.to_string());
-            sheet.get_cell_mut((2, row)).set_value(mflow.to_string());
-            sheet.get_cell_mut((3, row)).set_value(delp1i.to_string());
-            sheet.get_cell_mut((4, row)).set_value(p1ci.to_string());
-            sheet.get_cell_mut((5, row)).set_value(t1ci.to_string());
-            sheet.get_cell_mut((6, row)).set_value(t2i.to_string());
-            sheet.get_cell_mut((7, row)).set_value(pstat[0].to_string());
-            sheet.get_cell_mut((8, row)).set_value(ppito[0].to_string());
-            sheet.get_cell_mut((9, row)).set_value(pstat[1].to_string());
-            sheet.get_cell_mut((10,row)).set_value(ppito[1].to_string());
-            sheet.get_cell_mut((11,row)).set_value(pstat[2].to_string());
-            sheet.get_cell_mut((12,row)).set_value(ppito[2].to_string());
-            sheet.get_cell_mut((13,row)).set_value(pstat[3].to_string());
-            sheet.get_cell_mut((14,row)).set_value(ppito[3].to_string());
-            sheet.get_cell_mut((15,row)).set_value(sflow1.to_string());
-            sheet.get_cell_mut((16,row)).set_value(sflow2.to_string());
-            sheet.get_cell_mut((17,row)).set_value(sflow3.to_string());
-            sheet.get_cell_mut((18,row)).set_value(sflow4.to_string());
-            sheet.get_cell_mut((19,row)).set_value(sflow_fract.to_string());
-            sheet.get_cell_mut((20,row)).set_value(sflow_uneven.to_string());
-            let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
+            write_data_to_excel(
+                &mut book,
+                row,
+                timestamp,
+                mflow,
+                delp1i,
+                p1ci,
+                t1ci,
+                t2i,
+                pstat,
+                ppito,
+                sflow1,
+                sflow2,
+                sflow3,
+                sflow4,
+                sflow_fract,
+                sflow_uneven,
+            );
             row += 1;
         }
     }
@@ -291,4 +262,74 @@ fn parse_response(resp: &str) -> Vec<f64> {
         .rev()
         .map(|x| x.parse().unwrap_or(0.0) * 6894.75672)
         .collect()
+}
+
+fn initialize_excel_file() -> umya_spreadsheet::Spreadsheet {
+    let mut book = umya_spreadsheet::new_file();
+    let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
+    
+    let headers = [
+        "Time", "Flow, kg/s", "DeltaP, Pa", "P,Pa", 
+        "t1ci", "t2i", "pstat1", "ppito1", "pstat2", 
+        "ppito2", "pstat3", "ppito3", "pstat4", "ppito4",
+        "sflow1", "sflow2", "sflow3", "sflow4", 
+        "sflow_fract", "sflow_uneven"
+    ];
+
+    for (idx, header) in headers.iter().enumerate() {
+        sheet.get_cell_mut((idx as u32 + 1, 1)).set_value(header.to_string());
+    }
+
+    let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
+    book
+}
+
+fn write_data_to_excel(
+    book: &mut umya_spreadsheet::Spreadsheet,
+    row: u32,
+    timestamp: u64,
+    mflow: f64,
+    delp1i: f64,
+    p1ci: f64,
+    t1ci: f64,
+    t2i: f64,
+    pstat: [f64; 4],
+    ppito: [f64; 4],
+    sflow1: f64,
+    sflow2: f64,
+    sflow3: f64,
+    sflow4: f64,
+    sflow_fract: f64,
+    sflow_uneven: f64,
+) {
+    let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
+    
+    let data = [
+        timestamp.to_string(),
+        mflow.to_string(),
+        delp1i.to_string(),
+        p1ci.to_string(),
+        t1ci.to_string(),
+        t2i.to_string(),
+        pstat[0].to_string(),
+        ppito[0].to_string(),
+        pstat[1].to_string(),
+        ppito[1].to_string(),
+        pstat[2].to_string(),
+        ppito[2].to_string(),
+        pstat[3].to_string(),
+        ppito[3].to_string(),
+        sflow1.to_string(),
+        sflow2.to_string(),
+        sflow3.to_string(),
+        sflow4.to_string(),
+        sflow_fract.to_string(),
+        sflow_uneven.to_string(),
+    ];
+
+    for (col, value) in data.iter().enumerate() {
+        sheet.get_cell_mut((col as u32 + 1, row)).set_value(value.clone());
+    }
+
+    let _ = umya_spreadsheet::writer::xlsx::write(book, "./monitoring_data.xlsx");
 }
