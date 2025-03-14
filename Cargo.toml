@@ -3,9 +3,6 @@ name = "enlil"
 version = "0.1.0"
 edition = "2021"
 
-# [lints]
-# workspace = true
-
 [dependencies]
 eframe = { version = "0.30" }
 egui_extras = { version = "*", features = ["all_loaders"] }

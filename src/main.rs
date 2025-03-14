@@ -67,6 +67,30 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
     ));
     
     let mut book = umya_spreadsheet::new_file();
+    let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
+    sheet.get_cell_mut((1, 1)).set_value("Time".to_string());
+    sheet.get_cell_mut((2, 1)).set_value("Flow, kg/s".to_string());
+    sheet.get_cell_mut((3, 1)).set_value("DeltaP, Pa".to_string());
+    sheet.get_cell_mut((4, 1)).set_value("P,Pa".to_string());
+    sheet.get_cell_mut((5, 1)).set_value("t1ci".to_string());
+    sheet.get_cell_mut((6, 1)).set_value("t2i".to_string());
+    sheet.get_cell_mut((7, 1)).set_value("pstat1".to_string());
+    sheet.get_cell_mut((8, 1)).set_value("ppito1".to_string());
+    sheet.get_cell_mut((9, 1)).set_value("pstat2".to_string());
+    sheet.get_cell_mut((10,1)).set_value("ppito2".to_string());
+    sheet.get_cell_mut((11,1)).set_value("pstat3".to_string());
+    sheet.get_cell_mut((12,1)).set_value("ppito3".to_string());
+    sheet.get_cell_mut((13,1)).set_value("pstat4".to_string());
+    sheet.get_cell_mut((14,1)).set_value("ppito4".to_string());
+    sheet.get_cell_mut((15,1)).set_value("sflow1".to_string());
+    sheet.get_cell_mut((16,1)).set_value("sflow2".to_string());
+    sheet.get_cell_mut((17,1)).set_value("sflow3".to_string());
+    sheet.get_cell_mut((18,1)).set_value("sflow4".to_string());
+    sheet.get_cell_mut((19,1)).set_value("sflow_fract".to_string());
+    sheet.get_cell_mut((20,1)).set_value("sflow_uneven".to_string());
+    let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
+    let mut row = 2;
+
     let headstrf = "Time\tFlow, kg/s\tDeltaP, Pa\tP, Pa\tTemp, K\tTemp2, K\n";
     
     {
@@ -109,16 +133,36 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 
         // Обработка и сохранение данных
         if resp_noz != "err" && resp_con != "err" && resp_203 != "err" && resp_204 != "err" {
-            // let plist_203 = parse_response(&resp_203);
+            let plist_203 = parse_response(&resp_203);
             let plist_204 = parse_response(&resp_204);
-            let blist = ["1,1".to_string(), "2,1".to_string(), "3,1".to_string()];
+            let blist     = ["1,1".to_string(), "2,1".to_string(), "3,1".to_string()];
 
             // Расчеты
             let delp1i = plist_204[8] - plist_204[9];
-            let p1ci = plist_204[8] + blist[1].replace(',', ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let t1ci = resp_noz.parse::<f64>().unwrap_or(0.0) + 273.15;
-            let t2i = resp_con.parse::<f64>().unwrap_or(0.0) + 273.15;
-            let mflow = calc_g(t1ci, delp1i, p1ci);
+            let p1ci   = plist_204[8] + blist[1].replace(',', ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let t1ci   = resp_noz.parse::<f64>().unwrap_or(0.0) + 273.15;
+            let t2i    = resp_con.parse::<f64>().unwrap_or(0.0) + 273.15;
+
+            let mflow  = calc_g(t1ci, delp1i, p1ci);
+
+            let pstat1 = plist_204[0] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let ppito1 = plist_204[0] + plist_203[11] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let pstat2 = plist_204[1] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let ppito2 = plist_204[1] + plist_203[12] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let pstat3 = plist_204[2] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let ppito3 = plist_204[2] + plist_203[13] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let pstat4 = plist_204[3] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let ppito4 = plist_204[3] + plist_203[14] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+
+            let sflow1 = calc_gs(ppito1, pstat1, t2i);
+            let sflow2 = calc_gs(ppito2, pstat2, t2i);
+            let sflow3 = calc_gs(ppito3, pstat3, t2i);
+            let sflow4 = calc_gs(ppito4, pstat4, t2i);
+
+            let sflow_sum    = sflow1 + sflow2 + sflow3 + sflow4;
+            let sflow_ave    = sflow_sum / 4.0;
+            let sflow_fract  = sflow_sum / mflow * 100.0;
+            let sflow_uneven = 100.0 * (sflow1.max(sflow2).max(sflow3).max(sflow4) - sflow1.min(sflow2).min(sflow3).min(sflow4)) / sflow_ave;
 
             // Формирование строки для сохранения
             let savestr = format!(
@@ -135,19 +179,32 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             data.resp_con.push_front(resp_con);
             data.resp_203.push_front(resp_203);
             data.resp_204.push_front(resp_204);
-            // data.metrics.push_back(savestr.clone());
-
-            // Ограничение истории
-            // if data.resp_noz.len() > 10 { data.resp_noz.pop_front(); }
-            // if data.resp_con.len() > 10 { data.resp_con.pop_front(); }
-            // if data.resp_203.len() > 10 { data.resp_203.pop_front(); }
-            // if data.resp_204.len() > 10 { data.resp_204.pop_front(); }
-            // if data.metrics.len() > 10 { data.metrics.pop_front(); }
+            // data.metrics.push_front(savestr.clone());
 
             // Запись в Excel
             let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
-            sheet.get_cell_mut("A1").set_value("Monitoring Data");
+            sheet.get_cell_mut((1, row)).set_value(timestamp.to_string());
+            sheet.get_cell_mut((2, row)).set_value(mflow.to_string());
+            sheet.get_cell_mut((3, row)).set_value(delp1i.to_string());
+            sheet.get_cell_mut((4, row)).set_value(p1ci.to_string());
+            sheet.get_cell_mut((5, row)).set_value(t1ci.to_string());
+            sheet.get_cell_mut((6, row)).set_value(t2i.to_string());
+            sheet.get_cell_mut((7, row)).set_value(pstat1.to_string());
+            sheet.get_cell_mut((8, row)).set_value(ppito1.to_string());
+            sheet.get_cell_mut((9, row)).set_value(pstat2.to_string());
+            sheet.get_cell_mut((10,row)).set_value(ppito2.to_string());
+            sheet.get_cell_mut((11,row)).set_value(pstat3.to_string());
+            sheet.get_cell_mut((12,row)).set_value(ppito3.to_string());
+            sheet.get_cell_mut((13,row)).set_value(pstat4.to_string());
+            sheet.get_cell_mut((14,row)).set_value(ppito4.to_string());
+            sheet.get_cell_mut((15,row)).set_value(sflow1.to_string());
+            sheet.get_cell_mut((16,row)).set_value(sflow2.to_string());
+            sheet.get_cell_mut((17,row)).set_value(sflow3.to_string());
+            sheet.get_cell_mut((18,row)).set_value(sflow4.to_string());
+            sheet.get_cell_mut((19,row)).set_value(sflow_fract.to_string());
+            sheet.get_cell_mut((20,row)).set_value(sflow_uneven.to_string());
             let _ = umya_spreadsheet::writer::xlsx::write(&book, "./monitoring_data.xlsx");
+            row += 1;
 
             // Запись в лог
             let mut log = log_file.lock().unwrap();
@@ -160,16 +217,19 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 impl eframe::App for MonitoringApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
+
         egui::CentralPanel::default().show(ctx, |ui| {
+
             ui.horizontal(|ui| {
-                let egui_icon = egui::include_image!("../assets/icon.jpg");
-                ui.add(egui::Image::new(egui_icon.clone()));
+                let icon = egui::include_image!("../assets/icon.jpg");
+                ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
                 ui.heading("Real-time Server Monitoring");
             });
+
             ui.separator();
 
             let data = self.shared_data.lock().unwrap();
-            
+
             // Таблица с сырыми данными
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("server_data_grid")
@@ -215,6 +275,7 @@ impl eframe::App for MonitoringApp {
 fn fetch_data_from_server(ip: &str, port: u16) -> Result<String, std::io::Error> {
     let mut stream = TcpStream::connect((ip, port))?;
     stream.write_all(b"rffff0")?;
+
     let mut response = Vec::new();
     stream.read_to_end(&mut response)?;
     Ok(String::from_utf8_lossy(&response).to_string())
