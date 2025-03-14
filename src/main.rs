@@ -119,29 +119,34 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
         if resp_noz != "err" && resp_con != "err" && resp_203 != "err" && resp_204 != "err" {
             let plist_203 = parse_response(&resp_203);
             let plist_204 = parse_response(&resp_204);
-            let blist     = ["1,1".to_string(), "2,1".to_string(), "3,1".to_string()];
+            let blist     = [1.1, 2.1, 3.1];
 
             // Расчеты
             let delp1i = plist_204[8] - plist_204[9];
-            let p1ci   = plist_204[8] + blist[1].replace(',', ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let p1ci   = plist_204[8] + blist[1] * 100.0;
             let t1ci   = resp_noz.parse::<f64>().unwrap_or(0.0) + 273.15;
             let t2i    = resp_con.parse::<f64>().unwrap_or(0.0) + 273.15;
 
             let mflow  = calc_g(t1ci, delp1i, p1ci);
 
-            let pstat1 = plist_204[0] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let ppito1 = plist_204[0] + plist_203[11] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let pstat2 = plist_204[1] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let ppito2 = plist_204[1] + plist_203[12] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let pstat3 = plist_204[2] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let ppito3 = plist_204[2] + plist_203[13] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let pstat4 = plist_204[3] +                 blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
-            let ppito4 = plist_204[3] + plist_203[14] + blist[1].replace(",", ".").parse::<f64>().unwrap_or(0.0) * 100.0;
+            let pstat = [
+                plist_204[0] + blist[1] * 100.0,
+                plist_204[1] + blist[1] * 100.0,
+                plist_204[2] + blist[1] * 100.0,
+                plist_204[3] + blist[1] * 100.0,
+            ];
 
-            let sflow1 = calc_gs(ppito1, pstat1, t2i);
-            let sflow2 = calc_gs(ppito2, pstat2, t2i);
-            let sflow3 = calc_gs(ppito3, pstat3, t2i);
-            let sflow4 = calc_gs(ppito4, pstat4, t2i);
+            let ppito = [
+                pstat[0] + plist_203[11],
+                pstat[1] + plist_203[12],
+                pstat[2] + plist_203[13],
+                pstat[3] + plist_203[14],
+            ];
+
+            let sflow1 = calc_gs(ppito[0], pstat[0], t2i);
+            let sflow2 = calc_gs(ppito[1], pstat[1], t2i);
+            let sflow3 = calc_gs(ppito[2], pstat[2], t2i);
+            let sflow4 = calc_gs(ppito[3], pstat[3], t2i);
 
             let sflow_sum    = sflow1 + sflow2 + sflow3 + sflow4;
             let sflow_ave    = sflow_sum / 4.0;
@@ -164,14 +169,14 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             sheet.get_cell_mut((4, row)).set_value(p1ci.to_string());
             sheet.get_cell_mut((5, row)).set_value(t1ci.to_string());
             sheet.get_cell_mut((6, row)).set_value(t2i.to_string());
-            sheet.get_cell_mut((7, row)).set_value(pstat1.to_string());
-            sheet.get_cell_mut((8, row)).set_value(ppito1.to_string());
-            sheet.get_cell_mut((9, row)).set_value(pstat2.to_string());
-            sheet.get_cell_mut((10,row)).set_value(ppito2.to_string());
-            sheet.get_cell_mut((11,row)).set_value(pstat3.to_string());
-            sheet.get_cell_mut((12,row)).set_value(ppito3.to_string());
-            sheet.get_cell_mut((13,row)).set_value(pstat4.to_string());
-            sheet.get_cell_mut((14,row)).set_value(ppito4.to_string());
+            sheet.get_cell_mut((7, row)).set_value(pstat[0].to_string());
+            sheet.get_cell_mut((8, row)).set_value(ppito[0].to_string());
+            sheet.get_cell_mut((9, row)).set_value(pstat[1].to_string());
+            sheet.get_cell_mut((10,row)).set_value(ppito[1].to_string());
+            sheet.get_cell_mut((11,row)).set_value(pstat[2].to_string());
+            sheet.get_cell_mut((12,row)).set_value(ppito[2].to_string());
+            sheet.get_cell_mut((13,row)).set_value(pstat[3].to_string());
+            sheet.get_cell_mut((14,row)).set_value(ppito[3].to_string());
             sheet.get_cell_mut((15,row)).set_value(sflow1.to_string());
             sheet.get_cell_mut((16,row)).set_value(sflow2.to_string());
             sheet.get_cell_mut((17,row)).set_value(sflow3.to_string());
