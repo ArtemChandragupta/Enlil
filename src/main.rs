@@ -6,6 +6,7 @@ use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
+use egui_plot::{Line, Plot, PlotPoints};
 extern crate umya_spreadsheet;
 
 const IP_NOZ: &str = "127.0.0.27";
@@ -14,13 +15,33 @@ const IP_203: &str = "127.0.0.203";
 const IP_204: &str = "127.0.0.204";
 const SERVER_PORT: u16 = 9000;
 
+// Структура для хранения результатов вычислений
+#[derive(Clone, Default)]
+struct ComputationResults {
+    timestamp:    u64,
+    mflow:        f64,
+    delp1i:       f64,
+    p1ci:         f64,
+    t1ci:         f64,
+    t2i:          f64,
+    pstat:       [f64; 4],
+    ppito:       [f64; 4],
+    sflow1:       f64,
+    sflow2:       f64,
+    sflow3:       f64,
+    sflow4:       f64,
+    sflow_fract:  f64,
+    sflow_uneven: f64,
+}
+
 // Структура для хранения данных
 #[derive(Default)]
 struct ServerData {
-    resp_con: VecDeque<String>,
-    resp_noz: VecDeque<String>,
-    resp_203: VecDeque<String>,
-    resp_204: VecDeque<String>,
+    resp_con:         VecDeque<String>,
+    resp_noz:         VecDeque<String>,
+    resp_203:         VecDeque<String>,
+    resp_204:         VecDeque<String>,
+    computed_results: VecDeque<ComputationResults>
 }
 
 // Основное приложение
@@ -130,16 +151,7 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             let sflow_fract  = sflow_sum / mflow * 100.0;
             let sflow_uneven = 100.0 * (sflow1.max(sflow2).max(sflow3).max(sflow4) - sflow1.min(sflow2).min(sflow3).min(sflow4)) / sflow_ave;
 
-            // Обновление общих данных
-            let mut data = shared_data.lock().unwrap();
-            data.resp_noz.push_front(resp_noz);
-            data.resp_con.push_front(resp_con);
-            data.resp_203.push_front(resp_203);
-            data.resp_204.push_front(resp_204);
-
-            write_data_to_excel(
-                &mut book,
-                row,
+            let result = ComputationResults {
                 timestamp,
                 mflow,
                 delp1i,
@@ -154,7 +166,17 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 sflow4,
                 sflow_fract,
                 sflow_uneven,
-            );
+            };
+
+            // Обновление общих данных
+            let mut data = shared_data.lock().unwrap();
+            data.resp_noz.push_front(resp_noz);
+            data.resp_con.push_front(resp_con);
+            data.resp_203.push_front(resp_203);
+            data.resp_204.push_front(resp_204);
+            data.computed_results.push_front(result.clone());
+
+            write_data_to_excel(&mut book, row, &result);
             row += 1;
         }
     }
@@ -284,52 +306,32 @@ fn initialize_excel_file() -> umya_spreadsheet::Spreadsheet {
     book
 }
 
-fn write_data_to_excel(
-    book: &mut umya_spreadsheet::Spreadsheet,
-    row: u32,
-    timestamp: u64,
-    mflow: f64,
-    delp1i: f64,
-    p1ci: f64,
-    t1ci: f64,
-    t2i: f64,
-    pstat: [f64; 4],
-    ppito: [f64; 4],
-    sflow1: f64,
-    sflow2: f64,
-    sflow3: f64,
-    sflow4: f64,
-    sflow_fract: f64,
-    sflow_uneven: f64,
-) {
+fn write_data_to_excel(book: &mut umya_spreadsheet::Spreadsheet, row: u32, result: &ComputationResults) {
     let sheet = book.get_sheet_by_name_mut("Sheet1").unwrap();
-    
     let data = [
-        timestamp.to_string(),
-        mflow.to_string(),
-        delp1i.to_string(),
-        p1ci.to_string(),
-        t1ci.to_string(),
-        t2i.to_string(),
-        pstat[0].to_string(),
-        ppito[0].to_string(),
-        pstat[1].to_string(),
-        ppito[1].to_string(),
-        pstat[2].to_string(),
-        ppito[2].to_string(),
-        pstat[3].to_string(),
-        ppito[3].to_string(),
-        sflow1.to_string(),
-        sflow2.to_string(),
-        sflow3.to_string(),
-        sflow4.to_string(),
-        sflow_fract.to_string(),
-        sflow_uneven.to_string(),
+        result.timestamp.to_string(),
+        result.mflow.to_string(),
+        result.delp1i.to_string(),
+        result.p1ci.to_string(),
+        result.t1ci.to_string(),
+        result.t2i.to_string(),
+        result.pstat[0].to_string(),
+        result.ppito[0].to_string(),
+        result.pstat[1].to_string(),
+        result.ppito[1].to_string(),
+        result.pstat[2].to_string(),
+        result.ppito[2].to_string(),
+        result.pstat[3].to_string(),
+        result.ppito[3].to_string(),
+        result.sflow1.to_string(),
+        result.sflow2.to_string(),
+        result.sflow3.to_string(),
+        result.sflow4.to_string(),
+        result.sflow_fract.to_string(),
+        result.sflow_uneven.to_string(),
     ];
-
     for (col, value) in data.iter().enumerate() {
         sheet.get_cell_mut((col as u32 + 1, row)).set_value(value.clone());
     }
-
     let _ = umya_spreadsheet::writer::xlsx::write(book, "./monitoring_data.xlsx");
 }
