@@ -294,28 +294,34 @@ fn save_to_excel(results: &[ComputationResults]) {
 
     // Данные
     for (row_idx, result) in results.iter().enumerate() {
-        let row = (row_idx + 2) as u32;
-        sheet.get_cell_mut((1, row)).set_value(result.timestamp.to_string());
-        sheet.get_cell_mut((2, row)).set_value(result.mflow.to_string());
-        sheet.get_cell_mut((3, row)).set_value(result.delp1i.to_string());
-        sheet.get_cell_mut((4, row)).set_value(result.p1ci.to_string());
-        sheet.get_cell_mut((5, row)).set_value(result.t1ci.to_string());
-        sheet.get_cell_mut((6, row)).set_value(result.t2i.to_string());
-        sheet.get_cell_mut((7, row)).set_value(result.pstat[0].to_string());
-        sheet.get_cell_mut((8, row)).set_value(result.ppito[0].to_string());
-        sheet.get_cell_mut((9, row)).set_value(result.pstat[1].to_string());
-        sheet.get_cell_mut((10,row)).set_value(result.ppito[1].to_string());
-        sheet.get_cell_mut((11,row)).set_value(result.pstat[2].to_string());
-        sheet.get_cell_mut((12,row)).set_value(result.ppito[2].to_string());
-        sheet.get_cell_mut((13,row)).set_value(result.pstat[3].to_string());
-        sheet.get_cell_mut((14,row)).set_value(result.ppito[3].to_string());
-        sheet.get_cell_mut((15,row)).set_value(result.sflow[0].to_string());
-        sheet.get_cell_mut((16,row)).set_value(result.sflow[1].to_string());
-        sheet.get_cell_mut((17,row)).set_value(result.sflow[2].to_string());
-        sheet.get_cell_mut((18,row)).set_value(result.sflow[3].to_string());
-        sheet.get_cell_mut((19,row)).set_value(result.sflow_fract.to_string());
-        sheet.get_cell_mut((10,row)).set_value(result.sflow_uneven.to_string());
-    }
+        let row = row_idx as u32 + 2;
+        let cols = [
+            result.timestamp.to_string(),
+            result.mflow.to_string(),
+            result.delp1i.to_string(),
+            result.p1ci.to_string(),
+            result.t1ci.to_string(),
+            result.t2i.to_string(),
+            result.pstat[0].to_string(),
+            result.ppito[0].to_string(),
+            result.pstat[1].to_string(),
+            result.ppito[1].to_string(),
+            result.pstat[2].to_string(),
+            result.ppito[2].to_string(),
+            result.pstat[3].to_string(),
+            result.ppito[3].to_string(),
+            result.sflow[0].to_string(),
+            result.sflow[1].to_string(),
+            result.sflow[2].to_string(),
+            result.sflow[3].to_string(),
+            result.sflow_fract.to_string(),
+            result.sflow_uneven.to_string(),
+        ];
+
+        for (col, value) in cols.iter().enumerate() {
+            sheet.get_cell_mut((col as u32 + 1, row)).set_value(value);
+        }
+    } 
 
     umya_spreadsheet::writer::xlsx::write(&book, "monitoring_data.xlsx").unwrap();
 }
