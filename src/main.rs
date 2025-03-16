@@ -6,7 +6,6 @@ use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
-use egui_plot::{Line, Plot, PlotPoints};
 extern crate umya_spreadsheet;
 
 const IP_NOZ: &str = "127.0.0.27";
@@ -65,12 +64,10 @@ fn main() {
         "Server Monitoring System",
         options,
         Box::new(|cc| {
-            // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            Ok(Box::new(MonitoringApp {
-            shared_data: shared_data.clone() 
-        }))}),
+            Ok(Box::new(MonitoringApp { shared_data: shared_data.clone() }))
+        }),
     );
 }
 
@@ -193,6 +190,10 @@ impl eframe::App for MonitoringApp {
                 let icon = egui::include_image!("../assets/icon.jpg");
                 ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
                 ui.heading("Real-time Server Monitoring");
+                egui::widgets::global_theme_preference_buttons(ui);
+                if ui.button("Quit").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             });
 
             ui.separator();
