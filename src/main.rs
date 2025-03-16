@@ -1,6 +1,5 @@
 use std::time::Duration;
 use eframe::egui;
-use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
@@ -33,10 +32,6 @@ struct ComputationResults {
 // Структура для хранения данных
 #[derive(Default)]
 struct ServerData {
-    resp_con:         VecDeque<String>,
-    resp_noz:         VecDeque<String>,
-    resp_203:         VecDeque<String>,
-    resp_204:         VecDeque<String>,
     computed_results: Vec<ComputationResults>
 }
 
@@ -45,7 +40,7 @@ struct MonitoringApp {
     shared_data: Arc<Mutex<ServerData>>,
 }
 
-fn main() {
+fn main() -> eframe::Result {
     // Общие данные для потоков
     let shared_data = Arc::new(Mutex::new(ServerData::default()));
     
@@ -57,14 +52,14 @@ fn main() {
 
     // Запускаем GUI
     let options = eframe::NativeOptions::default();
-    let _ = eframe::run_native(
+    eframe::run_native(
         "Server Monitoring System",
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(MonitoringApp { shared_data: shared_data.clone() }))
         }),
-    );
+    )
 }
 
 // Поток сбора данных
@@ -158,10 +153,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
 
             // Обновление общих данных
             let mut data = shared_data.lock().unwrap();
-            data.resp_noz.push_front(resp_noz);
-            data.resp_con.push_front(resp_con);
-            data.resp_203.push_front(resp_203);
-            data.resp_204.push_front(resp_204);
             data.computed_results.push(result.clone());
         }
     }
@@ -177,13 +168,15 @@ impl eframe::App for MonitoringApp {
             ui.horizontal(|ui| {
                 let icon = egui::include_image!("../assets/icon.jpg");
                 ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
-                ui.heading("Real-time Server Monitoring");
-                egui::widgets::global_theme_preference_buttons(ui);
-                if ui.button("Quit").clicked() {
-                    let data = self.shared_data.lock().unwrap();
-                    save_to_excel(&data.computed_results);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
+                ui.vertical(|ui| {
+                    ui.heading("Real-time Server Monitoring");
+                    egui::widgets::global_theme_preference_buttons(ui);
+                    if ui.button("Save to excell and quit").clicked() {
+                        let data = self.shared_data.lock().unwrap();
+                        save_to_excel(&data.computed_results);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
             });
 
             ui.separator();
@@ -193,26 +186,33 @@ impl eframe::App for MonitoringApp {
             // Таблица с сырыми данными
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("server_data_grid")
-                    .num_columns(4)
+                    .num_columns(10)
                     .spacing([20.0, 4.0])
                     .striped(true)
                     .show(ui, |ui| {
-                        ui.heading("NOZZLE");
-                        ui.heading("CONUS");
-                        ui.heading("SERVER 203");
-                        ui.heading("SERVER 204");
+                        ui.heading("Time");
+                        ui.heading("Flow, kg/s");
+                        ui.heading("nzT, °C");
+                        ui.heading("cT, °C");
+                        ui.heading("G1, kg/s");
+                        ui.heading("G2, kg/s");
+                        ui.heading("G3, kg/s");
+                        ui.heading("G4, kg/s");
+                        ui.heading("Gfrac, %");
+                        ui.heading("Guneven, %");
                         ui.end_row();
 
-                        let max_rows = data.resp_noz.len()
-                            .max(data.resp_con.len())
-                            .max(data.resp_203.len())
-                            .max(data.resp_204.len());
-
-                        for i in 0..max_rows {
-                            ui.label(&**data.resp_noz.get(i).unwrap_or(&"N/A".into()));
-                            ui.label(&**data.resp_con.get(i).unwrap_or(&"N/A".into()));
-                            ui.label(&**data.resp_203.get(i).unwrap_or(&"N/A".into()));
-                            ui.label(&**data.resp_204.get(i).unwrap_or(&"N/A".into()));
+                        for result in data.computed_results.iter().rev().take(50) {
+                            ui.label(result.timestamp.to_string());
+                            ui.label(format!("{:.2}",  result.mflow));
+                            ui.label(format!("{:.1}",  result.t1ci - 273.15)); // Конвертация K -> °C
+                            ui.label(format!("{:.1}",  result.t2i - 273.15));
+                            ui.label(format!("{:.2}",  result.sflow[0]));
+                            ui.label(format!("{:.2}",  result.sflow[1]));
+                            ui.label(format!("{:.2}",  result.sflow[2]));
+                            ui.label(format!("{:.2}",  result.sflow[3]));
+                            ui.label(format!("{:.1}", result.sflow_fract));
+                            ui.label(format!("{:.1}", result.sflow_uneven));
                             ui.end_row();
                         }
                     });
