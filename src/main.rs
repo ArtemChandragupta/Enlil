@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::{
+    time::{Duration, SystemTime, UNIX_EPOCH},
+    io::{Read, Write},
+    net::TcpStream,
+    sync::{Arc, Mutex},
+    thread,
+};
 use eframe::egui;
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
 extern crate umya_spreadsheet;
 
 const IP_NOZ: &str = "127.0.0.27";
