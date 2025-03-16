@@ -25,10 +25,7 @@ struct ComputationResults {
     t2i:          f64,
     pstat:       [f64; 4],
     ppito:       [f64; 4],
-    sflow1:       f64,
-    sflow2:       f64,
-    sflow3:       f64,
-    sflow4:       f64,
+    sflow:       [f64; 4],
     sflow_fract:  f64,
     sflow_uneven: f64,
 }
@@ -65,7 +62,6 @@ fn main() {
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-
             Ok(Box::new(MonitoringApp { shared_data: shared_data.clone() }))
         }),
     );
@@ -134,15 +130,17 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 pstat[3] + plist_203[14],
             ];
 
-            let sflow1 = calc_gs(ppito[0], pstat[0], t2i);
-            let sflow2 = calc_gs(ppito[1], pstat[1], t2i);
-            let sflow3 = calc_gs(ppito[2], pstat[2], t2i);
-            let sflow4 = calc_gs(ppito[3], pstat[3], t2i);
+            let sflow = [
+                calc_gs(ppito[0], pstat[0], t2i),
+                calc_gs(ppito[1], pstat[1], t2i),
+                calc_gs(ppito[2], pstat[2], t2i),
+                calc_gs(ppito[3], pstat[3], t2i),
+            ];
 
-            let sflow_sum    = sflow1 + sflow2 + sflow3 + sflow4;
+            let sflow_sum    = sflow.iter().sum::<f64>();
             let sflow_ave    = sflow_sum / 4.0;
             let sflow_fract  = sflow_sum / mflow * 100.0;
-            let sflow_uneven = 100.0 * (sflow1.max(sflow2).max(sflow3).max(sflow4) - sflow1.min(sflow2).min(sflow3).min(sflow4)) / sflow_ave;
+            let sflow_uneven = 100.0 * (sflow[0].max(sflow[1]).max(sflow[2]).max(sflow[3]) - sflow[0].min(sflow[1]).min(sflow[2]).min(sflow[3])) / sflow_ave;
 
             let result = ComputationResults {
                 timestamp,
@@ -153,10 +151,7 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 t2i,
                 pstat,
                 ppito,
-                sflow1,
-                sflow2,
-                sflow3,
-                sflow4,
+                sflow,
                 sflow_fract,
                 sflow_uneven,
             };
@@ -168,9 +163,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             data.resp_203.push_front(resp_203);
             data.resp_204.push_front(resp_204);
             data.computed_results.push(result.clone());
-
-            // write_data_to_excel(&mut book, row, &result);
-            // row += 1;
         }
     }
 }
@@ -317,10 +309,10 @@ fn save_to_excel(results: &[ComputationResults]) {
         sheet.get_cell_mut((12,row)).set_value(result.ppito[2].to_string());
         sheet.get_cell_mut((13,row)).set_value(result.pstat[3].to_string());
         sheet.get_cell_mut((14,row)).set_value(result.ppito[3].to_string());
-        sheet.get_cell_mut((15,row)).set_value(result.sflow1.to_string());
-        sheet.get_cell_mut((16,row)).set_value(result.sflow2.to_string());
-        sheet.get_cell_mut((17,row)).set_value(result.sflow3.to_string());
-        sheet.get_cell_mut((18,row)).set_value(result.sflow4.to_string());
+        sheet.get_cell_mut((15,row)).set_value(result.sflow[0].to_string());
+        sheet.get_cell_mut((16,row)).set_value(result.sflow[1].to_string());
+        sheet.get_cell_mut((17,row)).set_value(result.sflow[2].to_string());
+        sheet.get_cell_mut((18,row)).set_value(result.sflow[3].to_string());
         sheet.get_cell_mut((19,row)).set_value(result.sflow_fract.to_string());
         sheet.get_cell_mut((10,row)).set_value(result.sflow_uneven.to_string());
     }
