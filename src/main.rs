@@ -6,8 +6,13 @@ use std::{
     thread,
 };
 use eframe::egui;
+use egui_plot::{Legend, Line, Plot, PlotPoints};
 extern crate umya_spreadsheet;
 
+// // const IP_NOZ: &str = "192.168.0.27";
+// const IP_CON: &str = "192.168.0.28";
+// const IP_203: &str = "192.168.0.203";
+// const IP_204: &str = "192.168.0.204";
 const IP_NOZ: &str = "127.0.0.27";
 const IP_CON: &str = "127.0.0.28";
 const IP_203: &str = "127.0.0.203";
@@ -79,6 +84,7 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 println!("NOZ error: {err}");
                 "err".to_string()
             });
+        // let resp_noz = "32";
         
         let resp_con = fetch_data_from_server(IP_CON, SERVER_PORT)
             .unwrap_or_else(|err| {
@@ -97,6 +103,7 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 println!("204 error: {err}");
                 "err".to_string()
             });
+        println!("{},{},{},{}",resp_noz,resp_con,resp_203,resp_204);
 
         // Обработка и сохранение данных
         if resp_noz != "err" && resp_con != "err" && resp_203 != "err" && resp_204 != "err" {
@@ -185,7 +192,7 @@ impl eframe::App for MonitoringApp {
             let data = self.shared_data.lock().unwrap();
 
             // Таблица с сырыми данными
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            /*egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("server_data_grid")
                     .num_columns(10)
                     .spacing([20.0, 4.0])
@@ -202,7 +209,6 @@ impl eframe::App for MonitoringApp {
                         ui.heading("Gfrac, %");
                         ui.heading("Guneven, %");
                         ui.end_row();
-
                         for result in data.computed_results.iter().rev().take(50) {
                             ui.label(result.timestamp.to_string());
                             ui.label(format!("{:.2}",  result.mflow));
@@ -217,18 +223,103 @@ impl eframe::App for MonitoringApp {
                             ui.end_row();
                         }
                     });
-            });
+            });*/
+
+            Plot::new("combined_plot")
+                .legend(Legend::default().position(egui_plot::Corner::RightTop))
+                .show(ui, |plot_ui| {
+                    let mflow_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.mflow])
+                        .collect();
+                    plot_ui.line(Line::new(mflow_points).name("Mass Flow (kg/s)"));
+
+                    let t1ci_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.t1ci])
+                        .collect();
+                    plot_ui.line(Line::new(t1ci_points).name("Nozzle T, C"));
+
+                    let t2i_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.t2i])
+                        .collect();
+                    plot_ui.line(Line::new(t2i_points).name("Conus T, C"));
+
+                    let sflow_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow[0]])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_points).name("G1, kg/s"));
+
+                    let sflow_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow[1]])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_points).name("G2, kg/s"));
+
+                    let sflow_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow[2]])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_points).name("G3, kg/s"));
+
+                    let sflow_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow[3]])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_points).name("G4, kg/s"));
+
+                    let sflow_fract_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow_fract])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_fract_points).name("G Fraction (%)"));
+
+                    let sflow_uneven_points: PlotPoints = data.computed_results
+                        .iter()
+                        .map(|r| [r.timestamp as f64, r.sflow_uneven])
+                        .collect();
+                    plot_ui.line(Line::new(sflow_uneven_points).name("G uneven (%)"));
+                });
         });
     }
 }
 
-fn fetch_data_from_server(ip: &str, port: u16) -> Result<String, std::io::Error> {
+/*fn fetch_data_from_server(ip: &str, port: u16) -> Result<String, std::io::Error> {
     let mut stream = TcpStream::connect((ip, port))?;
     stream.write_all(b"rffff0")?;
 
     let mut response = Vec::new();
     stream.read_to_end(&mut response)?;
     Ok(String::from_utf8_lossy(&response).to_string())
+}*/
+
+fn fetch_data_from_server(ip: &str, port: u16) -> Result<String, std::io::Error> {
+    let mut stream = TcpStream::connect((ip, port))?;
+    stream.write_all(b"rffff0")?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+
+    let mut response = Vec::new();
+    let mut buf = [0; 1024];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break, // Конец потока
+            Ok(n) => response.extend_from_slice(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Таймаут, больше данных нет
+                break;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+            println!("{}",String::from_utf8_lossy(&response));
+
+
+    Ok(
+        String::from_utf8_lossy(&response).to_string()
+    )
 }
 
 fn calc_g(t1c: f64, delp1: f64, p1c: f64) -> f64 {
