@@ -52,9 +52,7 @@ fn main() -> eframe::Result {
     
     // Запускаем поток сбора данных
     let data_clone = shared_data.clone();
-    thread::spawn(move || {
-        data_collection_thread(data_clone);
-    });
+    thread::spawn(move || data_collection_thread(data_clone));
 
     // Запускаем GUI
     let options = eframe::NativeOptions::default();
@@ -84,20 +82,19 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
                 println!("NOZ error: {err}");
                 "err".to_string()
             });
-        // let resp_noz = "32";
-        
+
         let resp_con = fetch_data_from_server(IP_CON, SERVER_PORT)
             .unwrap_or_else(|err| {
                 println!("CON error: {err}");
                 "err".to_string()
             });
-        
+
         let resp_203 = fetch_data_from_server(IP_203, SERVER_PORT)
             .unwrap_or_else(|err| {
                 println!("203 error: {err}");
                 "err".to_string()
             });
-        
+
         let resp_204 = fetch_data_from_server(IP_204, SERVER_PORT)
             .unwrap_or_else(|err| {
                 println!("204 error: {err}");
@@ -111,7 +108,6 @@ fn data_collection_thread(shared_data: Arc<Mutex<ServerData>>) {
             let plist_204 = parse_response(&resp_204);
             let blist     = [1.1, 2.1, 3.1];
 
-            // Расчеты
             let delp1i = plist_204[8] - plist_204[9];
             let p1ci   = plist_204[8] + blist[1] * 100.0;
             let t1ci   = resp_noz.parse::<f64>().unwrap_or(0.0) + 273.15;
