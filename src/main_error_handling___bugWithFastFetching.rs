@@ -33,6 +33,7 @@ enum Message {
 struct Server {
     address: String,
     status:  Status,
+    last_value: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,10 +68,22 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            // Message::ServerUpdate(i, res) => {
+            //     self.servers[i].status = match res {
+            //         Ok(_)  => Status::Online,
+            //         Err(e) => Status::Error(e),
+            //     };
+            //     check_server(self.servers[i].address.clone(), i)
+            // }
             Message::ServerUpdate(i, res) => {
-                self.servers[i].status = match res {
-                    Ok(_)  => Status::Online,
-                    Err(e) => Status::Error(e),
+                match &res {
+                    Ok(data) => {
+                        self.servers[i].last_value = Some(data.clone());
+                        self.servers[i].status = Status::Online;
+                    },
+                    Err(e)   => {
+                        self.servers[i].status = Status::Error(e.clone());
+                    }
                 };
                 check_server(self.servers[i].address.clone(), i)
             }
@@ -85,8 +98,31 @@ impl Application for App {
                     Command::perform(check_all(addresses), Message::HistoryUpdated)
                 ])
             }
+            // Message::HistoryUpdated(entry) => {
+            //     self.history.push(entry);
+            //     if self.history.len() > 20 { self.history.remove(0); }
+            //     Command::none()
+            // }
             Message::HistoryUpdated(entry) => {
-                self.history.push(entry);
+                // Модифицируем ответы, заменяя ошибки на последние успешные значения или "0"
+                let mut modified_responses = Vec::new();
+                for (i, res) in entry.responses.into_iter().enumerate() {
+                    let modified_res = match res {
+                        Ok(data) => Ok(data),
+                        Err(_) => {
+                            let value = self.servers.get(i)
+                                .and_then(|s| s.last_value.clone())
+                                .unwrap_or_else(|| "0".to_string());
+                            Ok(value)
+                        }
+                    };
+                    modified_responses.push(modified_res);
+                }
+                let modified_entry = HistoryEntry {
+                    timestamp: entry.timestamp,
+                    responses: modified_responses,
+                };
+                self.history.push(modified_entry);
                 if self.history.len() > 20 { self.history.remove(0); }
                 Command::none()
             }
@@ -113,7 +149,7 @@ impl Application for App {
 
 impl Server {
     fn new(address: impl Into<String>) -> Self {
-        Self { address: address.into(), status: Status::Loading }
+        Self { address: address.into(), status: Status::Loading, last_value: None }
     }
 
     fn view(&self, index: usize) -> Element<Message> {
