@@ -31,7 +31,6 @@ enum Message {
 
 #[derive(Debug, Clone)]
 struct Server {
-    input:   String,
     address: String,
     status:  Status,
 }
@@ -76,7 +75,7 @@ impl Application for App {
                 check_server(self.servers[i].address.clone(), i)
             }
             Message::AddressChanged(i, text) => {
-                self.servers[i].input = text;
+                self.servers[i].address = text;
                 Command::none()
             }
             Message::Tick => {
@@ -103,10 +102,10 @@ impl Application for App {
             .fold(Column::new(), |col, e| col.push(history_row(e)));
 
         Container::new(Column::new()
-            .push(header_row(["Server Address", "Status"]))
+            .push(header_row(&["Server Address", "Status"]))
             .push(Scrollable::new(server_view).height(Length::FillPortion(2)))
             .push(Text::new("Request History").size(20))
-            .push(header_row(["Time", "Responses"]))
+            .push(header_row(&["Time", "Responses"]))
             .push(Scrollable::new(history_view).height(Length::FillPortion(2)))
         ).padding(20).into()
     }
@@ -115,7 +114,7 @@ impl Application for App {
 impl Server {
     fn new(address: impl Into<String>) -> Self {
         let addr = address.into();
-        Self { input: addr.clone(), address: addr, status: Status::Loading }
+        Self { address: addr, status: Status::Loading }
     }
 
     fn view(&self, index: usize) -> Element<Message> {
@@ -126,7 +125,7 @@ impl Server {
         };
 
         Row::new()
-            .push(input_field(&self.input, index))
+            .push(input_field(&self.address, index))
             .push(status.width(half_width()))
             .padding(10)
             .spacing(20)
@@ -134,9 +133,9 @@ impl Server {
     }
 }
 
-fn header_row<'a>(items: impl IntoIterator<Item = &'a str>) -> Row<'a, Message> {
-    items.into_iter()
-        .fold(Row::new().padding(10), |row, text| 
+fn header_row<'a>(items: &[&'a str]) -> Row<'a, Message> {
+    items.iter()
+        .fold(Row::new().padding(10), |row, &text| 
             row.push(Text::new(text).width(half_width()))
         )
 }
