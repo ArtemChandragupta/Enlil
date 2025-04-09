@@ -72,7 +72,8 @@ impl Application for App {
                     Ok(_)  => Status::Online,
                     Err(e) => Status::Error(e),
                 };
-                check_server(self.servers[i].address.clone(), i)
+                // check_server(self.servers[i].address.clone(), i)
+                Command::none()
             }
             Message::AddressChanged(i, text) => {
                 self.servers[i].address = text;
