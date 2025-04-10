@@ -153,7 +153,7 @@ fn header_row(items: &[&'static str]) -> Row<'static, Message> {
 }
 
 fn history_row(entry: &HistoryEntry) -> Row<Message> {
-    let time = entry.timestamp.with_timezone(&Local).format("%T").to_string();
+    let time  = entry.timestamp.with_timezone(&Local).format("%T").to_string();
     let cells = entry.responses.iter().map(|res| 
         Text::new(match res {
             Ok(d)  => format!("✓ {d}"),
