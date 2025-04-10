@@ -40,6 +40,16 @@ enum Status {
     Error(String),
 }
 
+impl App {
+    // Метод для получения текущих адресов
+    fn current_addresses(servers: &[Server]) -> Vec<(usize, String)> {
+        servers.iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.address.clone()))
+            .collect()
+    }
+}
+
 impl Application for App {
     type Executor = executor::Default;
     type Message  = Message;
@@ -52,10 +62,7 @@ impl Application for App {
             .map(|&a| Server::new(a))
             .collect();
 
-        let initial_addresses = servers.iter()
-            .enumerate()
-            .map(|(i, s)| (i, s.address.clone()))
-            .collect();
+        let initial_addresses = App::current_addresses(&servers);
 
         // Запускаем первую проверку сразу
         let command = Command::perform(
@@ -84,12 +91,8 @@ impl Application for App {
                     self.history.remove(0);
                 }
 
-                let next_addresses = self.servers.iter()
-                    .enumerate()
-                    .map(|(i, s)| (i, s.address.clone()))
-                    .collect();
-                
-                // Command::none()
+                let next_addresses = App::current_addresses(&self.servers);
+
                 Command::perform(
                     delayed_check(next_addresses),
                     |(updates, entry)| Message::BatchUpdate(updates, entry)
