@@ -13,6 +13,7 @@ fn main() -> iced::Result {
 struct App {
     servers: Vec<Server>,
     history: Vec<HistoryEntry>,
+    is_checking: bool, // Добавлен флаг для отслеживания состояния проверки
 }
 
 #[derive(Debug, Clone)]
@@ -23,10 +24,10 @@ struct HistoryEntry {
 
 #[derive(Debug, Clone)]
 enum Message {
-    ServerUpdate(usize, Result<String, String>),
+    BatchUpdate(Vec<(usize, Result<String, String>)>, HistoryEntry),
     AddressChanged(usize, String),
     Tick,
-    HistoryUpdated(HistoryEntry),
+    ManualCheck, // Новое сообщение для ручной проверки
 }
 
 #[derive(Debug, Clone)]
@@ -51,44 +52,78 @@ impl Application for App {
     fn new(_flags: ()) -> (Self, Command<Message>) {
         let servers: Vec<_> = ["127.0.0.27:9000", "127.0.0.28:9000", "127.0.0.29:9000"]
             .iter()
-            .map(|&a| Server::new(a))
+            .map(|&a| Server {
+                address: a.into(),
+                status: Status::Loading,
+            })
             .collect();
 
-        let commands: Vec<_> = servers.iter()
-            .enumerate()
-            .map(|(i, s)| check_server(s.address.clone(), i))
-            .chain(std::iter::once(Command::perform(tick(), |_| Message::Tick)))
-            .collect();
+        let commands = Command::perform(
+            tick(),
+            |_| Message::Tick
+        );
 
-        (Self { servers, history: vec![] }, Command::batch(commands))
+        (Self { 
+            servers, 
+            history: vec![], 
+            is_checking: false, // Инициализация флага
+        }, commands)
     }
 
     fn title(&self) -> String { "Server Monitor".into() }
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::ServerUpdate(i, res) => {
-                self.servers[i].status = match res {
-                    Ok(_)  => Status::Online,
-                    Err(e) => Status::Error(e),
-                };
+            Message::BatchUpdate(updates, entry) => {
+                self.is_checking = false; // Сбрасываем флаг после обновления
+                for (i, res) in &updates {
+                    self.servers[*i].status = match res {
+                        Ok(_)  => Status::Online,
+                        Err(e) => Status::Error(e.clone()),
+                    };
+                }
+
+                self.history.push(entry);
+                if self.history.len() > 20 {
+                    self.history.remove(0);
+                }
+                
                 Command::none()
             }
+
             Message::AddressChanged(i, text) => {
                 self.servers[i].address = text;
                 Command::none()
             }
-            Message::Tick => {
-                let addresses = self.servers.iter().map(|s| s.address.clone()).collect();
-                Command::batch(vec![
-                    Command::perform(tick(), |_| Message::Tick),
-                    Command::perform(check_all(addresses), Message::HistoryUpdated)
-                ])
+
+            Message::ManualCheck => {
+                let servers = self.servers.iter()
+                    .enumerate()
+                    .map(|(i, s)| (i, s.address.clone()))
+                    .collect();
+
+                Command::perform(
+                    check_servers(servers),
+                    |(updates, entry)| Message::BatchUpdate(updates, entry)
+                )
             }
-            Message::HistoryUpdated(entry) => {
-                self.history.push(entry);
-                if self.history.len() > 20 { self.history.remove(0); }
-                Command::none()
+
+            Message::Tick => {
+                if self.is_checking {
+                    Command::none()
+                } else {
+                    self.is_checking = true; // Устанавливаем флаг
+                    Command::batch(vec![
+                        Command::perform(tick(), |_| Message::Tick),
+                        Command::perform(
+                            check_servers(self.servers.iter()
+                                .enumerate()
+                                .map(|(i, s)| (i, s.address.clone()))
+                                .collect()),
+                            |(updates, entry)| Message::BatchUpdate(updates, entry)
+                        )
+                    ])
+                }
             }
         }
     }
@@ -111,10 +146,13 @@ impl Application for App {
     }
 }
 
-impl Server {
-    fn new(address: impl Into<String>) -> Self {
-        Self { address: address.into(), status: Status::Loading }
-    }
+fn input_field(value: &str, index: usize) -> iced::widget::TextInput<'_, Message> {
+    text_input("Server address", value)
+        .on_input(move |t| Message::AddressChanged(index, t))
+        .on_submit(Message::ManualCheck)
+}
+
+impl Server { 
 
     fn view(&self, index: usize) -> Element<Message> {
         let status = match &self.status {
@@ -154,13 +192,6 @@ fn history_row(entry: &HistoryEntry) -> Row<Message> {
         .padding(10)
 }
 
-fn input_field(value: &str, index: usize) -> iced::widget::TextInput<'_, Message> {
-    text_input("Server address", value)
-        .on_input(move |t| Message::AddressChanged(index, t))
-        .on_submit(Message::Tick)
-        .width(HALF_WIDTH)
-}
-
 async fn check_server_task(address: String) -> Result<String, String> {
     let mut stream = TcpStream::connect(&address).await
         .map_err(|e| format!("Connect failed: {e}"))?;
@@ -175,19 +206,23 @@ async fn check_server_task(address: String) -> Result<String, String> {
     String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8: {e}"))
 }
 
-async fn check_all(addresses: Vec<String>) -> HistoryEntry {
-    let responses = futures::future::join_all(
-        addresses.into_iter().map(check_server_task)
+async fn check_servers(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<String, String>)>, HistoryEntry) {
+    let results = futures::future::join_all(
+        servers.into_iter().map(|(i, address)| async move {
+            let result = check_server_task(address).await;
+            (i, result)
+        })
     ).await;
 
-    HistoryEntry { timestamp: Utc::now(), responses }
+    let entry = HistoryEntry {
+        timestamp: Utc::now(),
+        responses: results.iter().map(|(_, res)| res.clone()).collect(),
+    };
+    
+    (results, entry)
 }
 
 async fn tick() { sleep(Duration::from_secs(5)).await }
-
-fn check_server(address: String, index: usize) -> Command<Message> {
-    Command::perform(check_server_task(address), move |res| Message::ServerUpdate(index, res))
-}
 
 const HALF_WIDTH: Length = Length::FillPortion(1);
 const TEXT_GRAY:  theme::Text = theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5));
