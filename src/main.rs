@@ -3,7 +3,7 @@ use iced::{
     widget::{Column, Container, Row, Scrollable, Text, text_input},
     theme,
 };
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, time::{sleep, Duration}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, time::Duration};
 use chrono::{DateTime, Local, Utc};
 
 fn main() -> iced::Result {
@@ -25,7 +25,6 @@ struct HistoryEntry {
 enum Message {
     BatchUpdate(Vec<(usize, Result<String, String>)>, HistoryEntry),
     AddressChanged(usize, String),
-    Tick,
 }
 
 #[derive(Debug, Clone)]
@@ -53,17 +52,18 @@ impl Application for App {
             .map(|&a| Server::new(a))
             .collect();
 
-        let commands = Command::batch(vec![
-            Command::perform(
-                check_servers(servers.iter().enumerate()
-                    .map(|(i, s)| (i, s.address.clone()))
-                    .collect()),
-                |(updates, entry)| Message::BatchUpdate(updates, entry)
-            ),
-            Command::perform(tick(), |_| Message::Tick)
-        ]);
+        let initial_addresses = servers.iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.address.clone()))
+            .collect();
 
-        (Self { servers, history: vec![] }, commands)
+        // Запускаем первую проверку сразу
+        let command = Command::perform(
+            delayed_check(initial_addresses),
+            |(updates, entry)| Message::BatchUpdate(updates, entry)
+        );
+
+        (Self { servers, history: vec![] }, command)
     }
 
 
@@ -83,23 +83,23 @@ impl Application for App {
                 if self.history.len() > 10 {
                     self.history.remove(0);
                 }
+
+                let next_addresses = self.servers.iter()
+                    .enumerate()
+                    .map(|(i, s)| (i, s.address.clone()))
+                    .collect();
                 
-                Command::none()
+                // Command::none()
+                Command::perform(
+                    delayed_check(next_addresses),
+                    |(updates, entry)| Message::BatchUpdate(updates, entry)
+                )
             }
             
             Message::AddressChanged(i, text) => {
                 self.servers[i].address = text;
                 Command::none()
             }
-            Message::Tick => Command::batch(vec![
-                Command::perform(tick(), |_| Message::Tick),
-                Command::perform(
-                    check_servers(self.servers.iter().enumerate()
-                        .map(|(i, s)| (i, s.address.clone()))
-                        .collect()),
-                    |(updates, entry)| Message::BatchUpdate(updates, entry)
-                )
-            ])
         }
     }
 
@@ -167,7 +167,7 @@ fn history_row(entry: &HistoryEntry) -> Row<Message> {
 fn input_field(value: &str, index: usize) -> iced::widget::TextInput<'_, Message> {
     text_input("Server address", value)
         .on_input(move |t| Message::AddressChanged(index, t))
-        .on_submit(Message::Tick)
+        // .on_submit(Message::Tick)
         .width(HALF_WIDTH)
 }
 
@@ -201,7 +201,10 @@ async fn check_servers(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<Str
     (results, entry)
 }
 
-async fn tick() { sleep(Duration::from_secs(2)).await }
+async fn delayed_check(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<String, String>)>, HistoryEntry) {
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    check_servers(servers).await
+}
 
 const HALF_WIDTH: Length = Length::FillPortion(1);
 const TEXT_GRAY:  theme::Text = theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5));
