@@ -48,6 +48,13 @@ impl App {
             .map(|(i, s)| (i, s.address.clone()))
             .collect()
     }
+
+    fn add_history_entry(&mut self, entry: HistoryEntry) {
+        self.history.push(entry);
+        if self.history.len() > 10 {
+            self.history.remove(0);
+        }
+    }
 }
 
 impl Status {
@@ -96,10 +103,7 @@ impl Application for App {
                     };
                 }
 
-                self.history.push(entry);
-                if self.history.len() > 10 {
-                    self.history.remove(0);
-                }
+                self.add_history_entry(entry);
 
                 let next_addresses = App::current_addresses(&self.servers);
 
