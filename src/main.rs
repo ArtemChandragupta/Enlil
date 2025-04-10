@@ -50,6 +50,16 @@ impl App {
     }
 }
 
+impl Status {
+    fn to_text(&self) -> Text {
+        match self {
+            Status::Loading  => Text::new("Loading...").style(TEXT_GRAY),
+            Status::Online   => Text::new("Online").style(TEXT_GREEN),
+            Status::Error(e) => Text::new(e).style(TEXT_RED),
+        }
+    }
+}
+
 impl Application for App {
     type Executor = executor::Default;
     type Message  = Message;
@@ -130,15 +140,9 @@ impl Server {
     }
 
     fn view(&self, index: usize) -> Element<Message> {
-        let status = match &self.status {
-            Status::Loading  => Text::new("Loading...").style(TEXT_GRAY),
-            Status::Online   => Text::new("Online").style(TEXT_GREEN),
-            Status::Error(e) => Text::new(e).style(TEXT_RED),
-        };
-
         Row::new()
             .push(input_field(&self.address, index))
-            .push(status.width(HALF_WIDTH))
+            .push(self.status.to_text().width(HALF_WIDTH))
             .padding(10)
             .spacing(20)
             .into()
