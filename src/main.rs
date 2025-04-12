@@ -45,23 +45,6 @@ enum Message {
 }
 
 
-impl App {
-    // Метод для получения текущих адресов
-    fn current_addresses(servers: &[Server]) -> Vec<(usize, String)> {
-        servers.iter()
-            .enumerate()
-            .map(|(i, s)| (i, s.address.clone()))
-            .collect()
-    }
-
-    fn add_history_entry(&mut self, entry: HistoryEntry) {
-        self.history.push(entry);
-        if self.history.len() > 10 {
-            self.history.remove(0);
-        }
-    }
-}
-
 // Status implementation
 impl Status {
     fn to_text(&self) -> Text {
@@ -72,6 +55,7 @@ impl Status {
         }
     }
 }
+
 
 // Application implementation
 impl Application for App {
@@ -86,7 +70,7 @@ impl Application for App {
             .map(|&a| Server::new(a))
             .collect();
 
-        let initial_addresses = App::current_addresses(&servers);
+        let initial_addresses = current_addresses(&servers);
 
         // Запускаем первую проверку сразу
         let command = Command::perform(
@@ -96,7 +80,6 @@ impl Application for App {
 
         (Self { servers, history: vec![] }, command)
     }
-
 
     fn title(&self) -> String { "Server Monitor".into() }
 
@@ -110,9 +93,9 @@ impl Application for App {
                     };
                 }
 
-                self.add_history_entry(entry);
+                add_history_entry(&mut self.history, entry);
 
-                let next_addresses = App::current_addresses(&self.servers);
+                let next_addresses = current_addresses(&self.servers);
 
                 Command::perform(
                     delayed_check(next_addresses),
@@ -159,6 +142,15 @@ impl Server {
             .padding(10)
             .spacing(20)
             .into()
+    }
+}
+
+
+// Helper functions
+fn add_history_entry(history: &mut Vec<HistoryEntry>, entry: HistoryEntry) {
+    history.push(entry);
+    if history.len() > 10 {
+        history.remove(0);
     }
 }
 
@@ -228,6 +220,13 @@ async fn check_servers(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<Str
 async fn delayed_check(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<String, String>)>, HistoryEntry) {
     tokio::time::sleep(Duration::from_secs(2)).await;
     check_servers(servers).await
+}
+
+fn current_addresses(servers: &[Server]) -> Vec<(usize, String)> {
+    servers.iter()
+        .enumerate()
+        .map(|(i, s)| (i, s.address.clone()))
+        .collect()
 }
 
 
