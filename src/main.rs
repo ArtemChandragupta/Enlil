@@ -45,18 +45,6 @@ enum Message {
 }
 
 
-// Status implementation
-impl Status {
-    fn to_text(&self) -> Text {
-        match self {
-            Status::Loading  => Text::new("Loading...").style(TEXT_GRAY),
-            Status::Online   => Text::new("Online").style(TEXT_GREEN),
-            Status::Error(e) => Text::new(e).style(TEXT_RED),
-        }
-    }
-}
-
-
 // Application implementation
 impl Application for App {
     type Executor = executor::Default;
@@ -111,16 +99,17 @@ impl Application for App {
     }
 
     fn view(&self) -> Element<Message> {
-        let server_view = self.servers.iter()
+        let server_views = self.servers.iter()
             .enumerate()
-            .fold(Column::new(), |col, (i, s)| col.push(s.view(i)));
+            .map(|(i, s)| server_view(i, &s.address, &s.status))
+            .collect::<Vec<_>>();
 
         let history_view = self.history.iter()
             .fold(Column::new(), |col, e| col.push(history_row(e)));
 
         Container::new(Column::new()
             .push(header_row(&["Server Address", "Status"]))
-            .push(Scrollable::new(server_view).height(Length::FillPortion(2)))
+            .push(Scrollable::new(Column::with_children(server_views)))
             .push(Text::new("Request History").size(20))
             .push(header_row(&["Time", "Responses"]))
             .push(Scrollable::new(history_view).height(Length::FillPortion(2)))
@@ -133,15 +122,6 @@ impl Application for App {
 impl Server {
     fn new(address: impl Into<String>) -> Self {
         Self { address: address.into(), status: Status::Loading }
-    }
-
-    fn view(&self, index: usize) -> Element<Message> {
-        Row::new()
-            .push(input_field(&self.address, index))
-            .push(self.status.to_text().width(HALF_WIDTH))
-            .padding(10)
-            .spacing(20)
-            .into()
     }
 }
 
@@ -178,11 +158,34 @@ fn history_row(entry: &HistoryEntry) -> Row<Message> {
         .padding(10)
 }
 
-fn input_field(value: &str, index: usize) -> iced::widget::TextInput<'_, Message> {
-    text_input("Server address", value)
-        .on_input(move |t| Message::AddressChanged(index, t))
-        // .on_submit(Message::Tick)
-        .width(HALF_WIDTH)
+// Компонент: Строка сервера
+fn server_view<'a>(
+    index: usize,
+    address: &'a str,
+    status: &'a Status,
+) -> Element<'a, Message> {
+    fn address_input(index: usize, address: &str) -> iced::widget::TextInput<Message> {
+        text_input("Server address", address)
+            .on_input(move |text| Message::AddressChanged(index, text))
+            .width(HALF_WIDTH)
+    }
+
+    fn status_text(status: &Status) -> Text {
+        let (text, style) = match status {
+            Status::Loading  => ("Loading...", TEXT_GRAY ),
+            Status::Online   => ("Online",     TEXT_GREEN),
+            Status::Error(e) => (e.as_str(),   TEXT_RED  ),
+        };
+        
+        Text::new(text).style(style).width(HALF_WIDTH)
+    }
+
+    Row::new()
+        .push(address_input(index, address))
+        .push(status_text(status))
+        .padding(10)
+        .spacing(20)
+        .into()
 }
 
 
