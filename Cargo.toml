@@ -1,5 +1,5 @@
 [package]
-name = "enlil-async"
+name = "enlil"
 version = "0.1.0"
 edition = "2024"
 
