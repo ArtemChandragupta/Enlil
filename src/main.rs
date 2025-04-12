@@ -6,25 +6,19 @@ use iced::{
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, time::Duration};
 use chrono::{DateTime, Local, Utc};
 
-fn main() -> iced::Result {
-    App::run(iced::Settings::default())
-}
 
+// Main App structure
 struct App {
     servers: Vec<Server>,
     history: Vec<HistoryEntry>,
 }
 
+
+// Model (state) components
 #[derive(Debug, Clone)]
 struct HistoryEntry {
     timestamp: DateTime<Utc>,
     responses: Vec<Result<String, String>>,
-}
-
-#[derive(Debug, Clone)]
-enum Message {
-    BatchUpdate(Vec<(usize, Result<String, String>)>, HistoryEntry),
-    AddressChanged(usize, String),
 }
 
 #[derive(Debug, Clone)]
@@ -33,12 +27,23 @@ struct Server {
     status:  Status,
 }
 
+
+// Status type
 #[derive(Debug, Clone)]
 enum Status {
     Loading,
     Online,
     Error(String),
 }
+
+
+// Messages
+#[derive(Debug, Clone)]
+enum Message {
+    BatchUpdate(Vec<(usize, Result<String, String>)>, HistoryEntry),
+    AddressChanged(usize, String),
+}
+
 
 impl App {
     // Метод для получения текущих адресов
@@ -57,6 +62,7 @@ impl App {
     }
 }
 
+// Status implementation
 impl Status {
     fn to_text(&self) -> Text {
         match self {
@@ -67,6 +73,7 @@ impl Status {
     }
 }
 
+// Application implementation
 impl Application for App {
     type Executor = executor::Default;
     type Message  = Message;
@@ -138,6 +145,8 @@ impl Application for App {
     }
 }
 
+
+// Server Implementation
 impl Server {
     fn new(address: impl Into<String>) -> Self {
         Self { address: address.into(), status: Status::Loading }
@@ -153,6 +162,8 @@ impl Server {
     }
 }
 
+
+// View Components
 fn header_row(items: &[&'static str]) -> Row<'static, Message> {
     items.iter()
         .fold(Row::new().padding(10), |row, &text| 
@@ -182,6 +193,8 @@ fn input_field(value: &str, index: usize) -> iced::widget::TextInput<'_, Message
         .width(HALF_WIDTH)
 }
 
+
+// Network Operations
 async fn check_server_task(address: String) -> Result<String, String> {
     let mut stream = TcpStream::connect(&address).await
         .map_err(|e| format!("Connect failed: {e}"))?;
@@ -217,7 +230,13 @@ async fn delayed_check(servers: Vec<(usize, String)>) -> (Vec<(usize, Result<Str
     check_servers(servers).await
 }
 
+
+// Constants
 const HALF_WIDTH: Length = Length::FillPortion(1);
 const TEXT_GRAY:  theme::Text = theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5));
 const TEXT_GREEN: theme::Text = theme::Text::Color(iced::Color::from_rgb(0.0, 0.8, 0.0));
 const TEXT_RED:   theme::Text = theme::Text::Color(iced::Color::from_rgb(0.8, 0.0, 0.0));
+
+fn main() -> iced::Result {
+    App::run(iced::Settings::default())
+}
