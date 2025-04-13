@@ -17,11 +17,9 @@ def start_server(ip, port):
         if ip == '127.0.0.27':
             response = f"{random.uniform(20.0, 30.0):.2f}"  # Температура сопла
         elif ip == '127.0.0.28':
-            response = f"{random.uniform(20.0, 30.0):.2f}"  # Температура конуса
-        elif ip == '127.0.0.203':
-            response = ' '.join([f"{random.uniform(10.0, 20.0):.2f}" for _ in range(16)])  # Давления от сканера 203
-        elif ip == '127.0.0.204':
-            response = ' '.join([f"{random.uniform(10.0, 20.0):.2f}" for _ in range(16)])  # Давления от сканера 204
+            response = f"{random.uniform(10.0, 20.0):.2f}"  # Температура конуса
+        elif ip == '127.0.0.29':
+            response = f"{random.uniform(0.0, 10.0):.2f}"  # Температура конуса
 
         client_socket.send(response.encode())
         client_socket.close()
@@ -30,7 +28,7 @@ def start_server(ip, port):
 import threading
 
 threads = []
-for ip in ['127.0.0.27', '127.0.0.28', '127.0.0.203', '127.0.0.204']:
+for ip in ['127.0.0.27', '127.0.0.28', '127.0.0.29']:
     t = threading.Thread(target=start_server, args=(ip, 9000))
     t.start()
     threads.append(t)
