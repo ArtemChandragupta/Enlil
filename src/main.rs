@@ -32,7 +32,7 @@ struct ServerData {
 }
 
 // Основное приложение
-struct MonitoringApp {
+struct State {
     shared_data: Arc<Mutex<ServerData>>,
 }
 
@@ -54,7 +54,7 @@ async fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(MonitoringApp { shared_data: shared_data.clone() }))
+            Ok(Box::new(State { shared_data }))
         }),
     )
 }
@@ -93,15 +93,12 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
             "err".to_string()
         });
 
-        let m1 = &m1.parse::<f64>().unwrap_or(0.0);
-        let m2 = &m2.parse::<f64>().unwrap_or(0.0);
-        let m3 = &m3.parse::<f64>().unwrap_or(0.0);
+        let m1 = m1.parse::<f64>().unwrap_or(0.0);
+        let m2 = m2.parse::<f64>().unwrap_or(0.0);
+        let m3 = m3.parse::<f64>().unwrap_or(0.0);
 
         let result = ComputationResults {
-            timestamp,
-            m1: *m1,
-            m2: *m2,
-            m3: *m3,
+            timestamp, m1, m2, m3
         };
 
         let mut data = shared_data.lock().unwrap();
@@ -111,7 +108,7 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
 }
 
 // Графический интерфейс
-impl eframe::App for MonitoringApp {
+impl eframe::App for State {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
 
@@ -137,9 +134,7 @@ impl eframe::App for MonitoringApp {
 
             Plot::new("combined_plot")
                 .legend(Legend::default().position(egui_plot::Corner::RightTop))
-                .allow_zoom(false)
-                .allow_scroll(false)
-                .allow_drag(false)
+                .allow_zoom(false).allow_scroll(false).allow_drag(false)
                 .show(ui, |plot_ui| {
                     let computed_results = &data.computed_results;
                     let start_index = computed_results.len().saturating_sub(20);
@@ -191,11 +186,4 @@ async fn fetch_data_async(ip: &str, port: u16) -> Result<String, std::io::Error>
     }
 
     Ok(String::from_utf8_lossy(&response).to_string())
-}
-
-fn parse_response(resp: &str) -> Vec<f64> {
-    resp.split_whitespace()
-        .rev()
-        .map(|x| x.parse().unwrap_or(0.0) * 6894.75672)
-        .collect()
 }
