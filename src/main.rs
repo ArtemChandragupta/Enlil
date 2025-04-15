@@ -106,7 +106,7 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
         ).await;
 
         // Обновляем статусы и собираем данные
-        let mut flow = Vec::with_capacity(servers.len());
+        let mut flow = Vec::with_capacity(servers.len()); // ошибка здесь
         {
             let mut data = shared_data.lock().unwrap();
             for (i, resp) in responses.into_iter().enumerate() {
@@ -139,9 +139,8 @@ impl eframe::App for State {
         ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
         
         egui::SidePanel::right("right_panel")
-            // .resizable(true)
+            .resizable(false)
             .default_width(200.0)
-            // .width_range(80.0..=200.0)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Настройки");
@@ -150,8 +149,9 @@ impl eframe::App for State {
                     ui.vertical(|ui| {
                         ui.heading("Серверы");
                         let mut data = self.shared_data.lock().unwrap();
+                        let mut to_remove = Vec::new();
                         egui::ScrollArea::vertical().show(ui, |ui| {
-                            for server in &mut data.servers {
+                            for (index,server) in data.servers.iter_mut().enumerate() {
                                 ui.horizontal(|ui| {
                                     ui.label("Имя:");
                                     ui.text_edit_singleline(&mut server.name);
@@ -167,11 +167,30 @@ impl eframe::App for State {
                                     "❌ Offline"
                                 };
 
-                                ui.label(status);
-                                
+                                ui.horizontal(|ui|{
+                                    ui.label(status);
+                                    if ui.button("-").clicked() {
+                                        to_remove.push(index);
+                                    }
+                                });
                                 ui.add_space(10.0);
                             }
                         });
+
+                        for &index in to_remove.iter().rev() {
+                            data.servers.remove(index);
+                        }
+
+                        if ui.button("+").clicked() {
+                            let len = data.servers.len() + 1;
+                            data.servers.push(
+                                ServerInfo {
+                                    name: format!("m{}", len),
+                                    address: "127.0.0.1:9000".to_string(),
+                                    online: false,
+                                },
+                            )
+                        }
                     });
                 });
             });
@@ -179,9 +198,7 @@ impl eframe::App for State {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let icon = egui::include_image!("../assets/logo_big.svg");
-                // let icon = egui::include_image!("../assets/icon.jpg");
                 ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
-                // ui.image(icon);
                 ui.vertical(|ui| {
                     ui.heading("Real-time Server Monitoring");
                     egui::widgets::global_theme_preference_buttons(ui);
@@ -200,6 +217,9 @@ impl eframe::App for State {
             Plot::new("combined_plot")
                 .legend(Legend::default().position(egui_plot::Corner::RightTop))
                 .allow_zoom(false).allow_scroll(false).allow_drag(false)
+                .set_margin_fraction(egui::Vec2::new(0.0, 0.0))
+                .x_axis_label("time")
+                .y_axis_label("signal")
                 .show(ui, |plot_ui| {
                     let computed_results = &data.computed_results;
                     let start_index = computed_results.len().saturating_sub(20);
