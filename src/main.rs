@@ -34,31 +34,27 @@ struct ComputationResults {
 struct ServerInfo {
     name:    String,
     address: String,
-    port:    u16,
     online:  bool,
 }
 
 
 #[tokio::main]
 async fn main() -> eframe::Result {
-    // Инициализация серверов
+    // Инициализация стандартных серверов
     let servers = vec![
         ServerInfo {
             name: "m1".to_string(),
-            address: "127.0.0.27".to_string(),
-            port: 9000,
+            address: "127.0.0.27:9000".to_string(),
             online: false,
         },
         ServerInfo {
             name: "m2".to_string(),
-            address: "127.0.0.28".to_string(),
-            port: 9000,
+            address: "127.0.0.28:9000".to_string(),
             online: false,
         },
         ServerInfo {
             name: "m3".to_string(),
-            address: "127.0.0.29".to_string(),
-            port: 9000,
+            address: "127.0.0.29:9000".to_string(),
             online: false,
         },
     ];
@@ -106,7 +102,7 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
 
         // Параллельное получение данных со всех серверов 
         let responses = futures::future::join_all(
-            servers.iter().map(|server| fetch_data_async(&server.address, server.port))
+            servers.iter().map(|server| fetch_data_async(&server.address))
         ).await;
 
         // Обновляем статусы и собираем данные
@@ -164,7 +160,6 @@ impl eframe::App for State {
                                     ui.label("Адрес:");
                                     ui.text_edit_singleline(&mut server.address);
                                 });
-                                ui.label(format!("Порт: {}", server.port));
 
                                 let status = if server.online {
                                     "✅ Online"
@@ -224,8 +219,8 @@ impl eframe::App for State {
     }
 }
 
-async fn fetch_data_async(ip: &str, port: u16) -> Result<String, std::io::Error> {
-    let mut stream = TcpStream::connect((ip, port)).await?;
+async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
+    let mut stream = TcpStream::connect(address).await?;
     stream.write_all(b"rffff0").await?;
 
     let mut response = Vec::with_capacity(128);
