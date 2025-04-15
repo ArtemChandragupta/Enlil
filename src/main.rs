@@ -10,14 +10,6 @@ use tokio::{
     io::{AsyncWriteExt,AsyncReadExt},
     time::Instant
 };
-extern crate umya_spreadsheet;
-
-const SERVERS: &[(&str, &str, u16)] = &[
-    ("127.0.0.27", "m1", 9000),
-    ("127.0.0.28", "m2", 9000),
-    ("127.0.0.29", "m3", 9000),
-];
-
 
 // Основное состояние приложения
 struct State {
@@ -27,7 +19,8 @@ struct State {
 // Структура для хранения данных
 #[derive(Default)]
 struct ServerData {
-    computed_results: Vec<ComputationResults>
+    computed_results: Vec<ComputationResults>,
+    servers:          Vec<ServerInfo>,
 }
 
 // Структура для хранения результатов вычислений
@@ -37,11 +30,44 @@ struct ComputationResults {
     flow: Vec<f64>
 }
 
+#[derive(Clone)]
+struct ServerInfo {
+    name:    String,
+    address: String,
+    port:    u16,
+    online:  bool,
+}
+
 
 #[tokio::main]
 async fn main() -> eframe::Result {
+    // Инициализация серверов
+    let servers = vec![
+        ServerInfo {
+            name: "m1".to_string(),
+            address: "127.0.0.27".to_string(),
+            port: 9000,
+            online: false,
+        },
+        ServerInfo {
+            name: "m2".to_string(),
+            address: "127.0.0.28".to_string(),
+            port: 9000,
+            online: false,
+        },
+        ServerInfo {
+            name: "m3".to_string(),
+            address: "127.0.0.29".to_string(),
+            port: 9000,
+            online: false,
+        },
+    ];
+
     // Общие данные для потоков
-    let shared_data = Arc::new(Mutex::new(ServerData::default()));
+    let shared_data = Arc::new(Mutex::new(ServerData {
+        computed_results: Vec::new(),
+        servers,
+    }));
     
     // Запускаем поток сбора данных
     let data_clone = shared_data.clone();
@@ -72,25 +98,33 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
             .expect("Time went backwards")
             .as_secs();
 
+        // Получаем копию списка серверов
+        let servers = {
+            let data = shared_data.lock().unwrap();
+            data.servers.clone()
+        };
+
         // Параллельное получение данных со всех серверов 
         let responses = futures::future::join_all(
-            SERVERS.iter().map(|(ip, _, port)| fetch_data_async(ip, *port))
+            servers.iter().map(|server| fetch_data_async(&server.address, server.port))
         ).await;
 
-        // Обработка ошибок
-        let flow: Vec<f64> = responses
-            .into_iter()
-            .enumerate()
-            .map(|(i, resp)| {
-                resp.unwrap_or_else(|err| {
-                    let (_, prefix, _) = SERVERS[i];
-                    println!("{} error: {}", prefix, err);
-                    "err".to_string()
-                })
-                .parse::<f64>()
-                .unwrap_or(0.0)
-            })
-            .collect();
+        // Обновляем статусы и собираем данные
+        let mut flow = Vec::with_capacity(servers.len());
+        {
+            let mut data = shared_data.lock().unwrap();
+            for (i, resp) in responses.into_iter().enumerate() {
+                // Обновляем статус подключения
+                data.servers[i].online = resp.is_ok();
+                
+                // Парсим результат
+                let value = match resp {
+                    Ok(response_str) => response_str.parse::<f64>().unwrap_or(0.0),
+                    Err(_) => 0.0,
+                };
+                flow.push(value);
+            }
+        }
 
         let result = ComputationResults {
             timestamp,
@@ -109,29 +143,48 @@ impl eframe::App for State {
         ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
         
         egui::SidePanel::right("right_panel")
-            .resizable(true)
-            .default_width(150.0)
-            .width_range(80.0..=200.0)
+            // .resizable(true)
+            .default_width(200.0)
+            // .width_range(80.0..=200.0)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Настройки");
                 });
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical(|ui| {
-                    ui.heading("Серверы");
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (ip, name, port) in SERVERS {
-                            ui.label(format!("{}: {}:{}", name, ip, port));
-                        }
-                    });
+                        ui.heading("Серверы");
+                        let mut data = self.shared_data.lock().unwrap();
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            for server in &mut data.servers {
+                                ui.horizontal(|ui| {
+                                    ui.label("Имя:");
+                                    ui.text_edit_singleline(&mut server.name);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Адрес:");
+                                    ui.text_edit_singleline(&mut server.address);
+                                });
+                                ui.label(format!("Порт: {}", server.port));
 
+                                let status = if server.online {
+                                    "✅ Online"
+                                } else {
+                                    "❌ Offline"
+                                };
+
+                                ui.label(status);
+                                
+                                ui.add_space(10.0);
+                            }
+                        });
                     });
                 });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let icon = egui::include_image!("../assets/icon.jpg");
+                let icon = egui::include_image!("../assets/logo_big.svg");
+                // let icon = egui::include_image!("../assets/icon.jpg");
                 ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
                 // ui.image(icon);
                 ui.vertical(|ui| {
@@ -157,14 +210,14 @@ impl eframe::App for State {
                     let start_index = computed_results.len().saturating_sub(20);
                     let last_20 = &computed_results[start_index..];
 
-                    // Генерация линий для всех метрик динамически
-                    for (i, (_, name, _)) in SERVERS.iter().enumerate() {
+                    // Генерация линий для всех данных
+                    for (i, server) in data.servers.iter().enumerate() {
                         let points: PlotPoints = last_20
                             .iter()
-                            .map(|r| [r.timestamp as f64, *r.flow.get(i).unwrap_or(&0.0)])
+                            .map(|r| [r.timestamp as f64, r.flow.get(i).copied().unwrap_or(0.0)])
                             .collect();
                         
-                        plot_ui.line(Line::new(points).name(name.to_string()));
+                        plot_ui.line(Line::new(points).name(&server.name));
                     }
                 });
         }); 
