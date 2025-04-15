@@ -105,22 +105,22 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
             servers.iter().map(|server| fetch_data_async(&server.address))
         ).await;
 
-        // Обновляем статусы и собираем данные
-        let mut flow = Vec::with_capacity(servers.len()); // ошибка здесь
+        // Обновляем статусы
         {
             let mut data = shared_data.lock().unwrap();
-            for (i, resp) in responses.into_iter().enumerate() {
-                // Обновляем статус подключения
+            for (i, resp) in responses.iter().enumerate() {
                 data.servers[i].online = resp.is_ok();
-                
-                // Парсим результат
-                let value = match resp {
-                    Ok(response_str) => response_str.parse::<f64>().unwrap_or(0.0),
-                    Err(_) => 0.0,
-                };
-                flow.push(value);
             }
         }
+
+        // Собираем данные
+        let flow: Vec<f64> = responses
+            .into_iter()
+            .map(|resp| resp
+                .map(|s| s.parse().unwrap_or(0.0))
+                .unwrap_or(0.0)
+            )
+            .collect();
 
         let result = ComputationResults {
             timestamp,
@@ -149,7 +149,6 @@ impl eframe::App for State {
                     ui.vertical(|ui| {
                         ui.heading("Серверы");
                         let mut data = self.shared_data.lock().unwrap();
-                        let mut to_remove = Vec::new();
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             for (index,server) in data.servers.iter_mut().enumerate() {
                                 ui.horizontal(|ui| {
@@ -169,17 +168,10 @@ impl eframe::App for State {
 
                                 ui.horizontal(|ui|{
                                     ui.label(status);
-                                    if ui.button("-").clicked() {
-                                        to_remove.push(index);
-                                    }
                                 });
                                 ui.add_space(10.0);
                             }
                         });
-
-                        for &index in to_remove.iter().rev() {
-                            data.servers.remove(index);
-                        }
 
                         if ui.button("+").clicked() {
                             let len = data.servers.len() + 1;
