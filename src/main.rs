@@ -194,12 +194,17 @@ impl eframe::App for State {
                 // Список опрашиваемых серверов
                 ui.separator();
                 ui.vertical(|ui| {
+                    let is_collecting = {
+                        let is_collecting = self.is_collecting.lock().unwrap();
+                        *is_collecting
+                    };
 
                     let mut data = self.shared_data.lock().unwrap();
+                    let mut to_remove = Vec::new();
 
                     ui.horizontal(|ui| {
                         ui.heading("Серверы");
-                        if ui.button("+ добавить").clicked() {
+                        if !is_collecting && ui.button("+ добавить").clicked() {
                             let len = data.servers.len() + 1;
                             data.servers.push(
                                 ServerInfo {
@@ -210,18 +215,24 @@ impl eframe::App for State {
                             )
                         }
                     });
- 
+
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         for (index,server) in data.servers.iter_mut().enumerate() {
                             ui.add_space(10.0);
                             ui.group(|ui| {
                                 ui.horizontal(|ui| {
                                     ui.label("Имя:");
-                                    ui.text_edit_singleline(&mut server.name);
+                                    ui.add_enabled(
+                                        !is_collecting,
+                                        egui::TextEdit::singleline(&mut server.address)
+                                    );
                                 });
                                 ui.horizontal(|ui| {
                                     ui.label("Адрес:");
-                                    ui.text_edit_singleline(&mut server.address);
+                                    ui.add_enabled(
+                                        !is_collecting,
+                                        egui::TextEdit::singleline(&mut server.address)
+                                    );
                                 });
 
                                 let status = if server.online {
@@ -230,11 +241,20 @@ impl eframe::App for State {
                                     "❌ Offline"
                                 };
 
-                                ui.horizontal(|ui|{
+                                ui.horizontal(|ui| {
                                     ui.label(status);
+                                    // Сохраняем индекс при нажатии кнопки
+                                    if !is_collecting && ui.button("-").clicked() {
+                                        to_remove.push(index);
+                                    }
                                 });
                             });
                         }
+
+                        for &index in to_remove.iter().rev() {
+                            data.servers.remove(index);
+                        }
+
                     }); 
                 });
             });
@@ -288,18 +308,9 @@ async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
     stream.write_all(b"rffff0").await?;
 
     let mut response = Vec::new();
-    let mut buf = [0u8; 1024];
-    
-    // Используем встроенный timeout вместо ручной проверки
-    match tokio::time::timeout(Duration::from_secs(3), async {
-        loop {
-            let read = stream.read(&mut buf).await?;
-            if read == 0 { break; }
-            response.extend_from_slice(&buf[..read]);
-        }
-        Ok(String::from_utf8_lossy(&response).into())
-    }).await {
-        Ok(result) => result,
+    match tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response)).await {
+        Ok(Ok(_bytes_read)) => Ok(String::from_utf8_lossy(&response).into_owned()),
+        Ok(Err(e)) => Err(e),
         Err(_) => Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut, 
             "Response timeout"
