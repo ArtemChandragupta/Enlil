@@ -8,13 +8,13 @@ use tokio::{
     net::TcpStream,
     time,
     io::{AsyncWriteExt,AsyncReadExt},
-    // time::Instant
 };
 
 // Основное состояние приложения
 struct State {
     shared_data:    Arc<Mutex<ServerData>>,
     points_to_show: usize,
+    is_collecting:  Arc<Mutex<bool>>,
 }
 
 // Структура для хранения данных
@@ -65,11 +65,14 @@ async fn main() -> eframe::Result {
         computed_results: Vec::new(),
         servers,
     }));
+
+    let is_collecting = Arc::new(Mutex::new(false));
+    let is_collecting_clone = is_collecting.clone();
     
     // Запускаем поток сбора данных
     let data_clone = shared_data.clone();
     tokio::spawn(async move {
-        data_collection_task(data_clone).await
+        data_collection_task(data_clone, is_collecting_clone).await
     });
 
     // Запускаем GUI
@@ -82,16 +85,29 @@ async fn main() -> eframe::Result {
             Ok(Box::new(State {
                 shared_data,
                 points_to_show: 20,
+                is_collecting,
             }))
         }),
     )
 }
 
-async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
+async fn data_collection_task(
+    shared_data: Arc<Mutex<ServerData>>,
+    is_collecting: Arc<Mutex<bool>>,
+) {
     let mut interval = time::interval(Duration::from_secs(1));
     
     loop {
         interval.tick().await;
+
+        let collect = {
+            let is_collecting = is_collecting.lock().unwrap();
+            *is_collecting
+        };
+
+        if !collect {
+            continue;
+        }
         
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -154,12 +170,51 @@ impl eframe::App for State {
                     ui.label("Точек на графике:");
                     ui.add(egui::DragValue::new(&mut self.points_to_show).range(2..=500));
                 });
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.heading("Серверы");
+
+                // Начало/остановка запросов
+                ui.separator();
+                ui.heading("Управление сбором");
+                let button_text = {
+                    let is_collecting = self.is_collecting.lock().unwrap();
+                    if *is_collecting { "⏹ Остановить сбор" } else { "▶ Начать сбор" }
+                };
+                if ui.button(button_text).clicked() {
+                    let new_state = {
+                        let mut is_collecting = self.is_collecting.lock().unwrap();
+                        *is_collecting = !*is_collecting;
+                        *is_collecting
+                    };
+
+                    if !new_state {
                         let mut data = self.shared_data.lock().unwrap();
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            for (index,server) in data.servers.iter_mut().enumerate() {
+                        data.computed_results.clear();
+                    }
+                }
+
+                // Список опрашиваемых серверов
+                ui.separator();
+                ui.vertical(|ui| {
+
+                    let mut data = self.shared_data.lock().unwrap();
+
+                    ui.horizontal(|ui| {
+                        ui.heading("Серверы");
+                        if ui.button("+ добавить").clicked() {
+                            let len = data.servers.len() + 1;
+                            data.servers.push(
+                                ServerInfo {
+                                    name: format!("m{}", len),
+                                    address: "127.0.0.1:9000".to_string(),
+                                    online: false,
+                                },
+                            )
+                        }
+                    });
+ 
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (index,server) in data.servers.iter_mut().enumerate() {
+                            ui.add_space(10.0);
+                            ui.group(|ui| {
                                 ui.horizontal(|ui| {
                                     ui.label("Имя:");
                                     ui.text_edit_singleline(&mut server.name);
@@ -178,21 +233,9 @@ impl eframe::App for State {
                                 ui.horizontal(|ui|{
                                     ui.label(status);
                                 });
-                                ui.add_space(10.0);
-                            }
-                        });
-
-                        if ui.button("+").clicked() {
-                            let len = data.servers.len() + 1;
-                            data.servers.push(
-                                ServerInfo {
-                                    name: format!("m{}", len),
-                                    address: "127.0.0.1:9000".to_string(),
-                                    online: false,
-                                },
-                            )
+                            });
                         }
-                    });
+                    }); 
                 });
             });
 
