@@ -8,12 +8,13 @@ use tokio::{
     net::TcpStream,
     time,
     io::{AsyncWriteExt,AsyncReadExt},
-    time::Instant
+    // time::Instant
 };
 
 // Основное состояние приложения
 struct State {
-    shared_data: Arc<Mutex<ServerData>>,
+    shared_data:    Arc<Mutex<ServerData>>,
+    points_to_show: usize,
 }
 
 // Структура для хранения данных
@@ -43,19 +44,19 @@ async fn main() -> eframe::Result {
     // Инициализация стандартных серверов
     let servers = vec![
         ServerInfo {
-            name: "m1".to_string(),
+            name:    "m1".to_string(),
             address: "127.0.0.27:9000".to_string(),
-            online: false,
+            online:  false,
         },
         ServerInfo {
-            name: "m2".to_string(),
+            name:    "m2".to_string(),
             address: "127.0.0.28:9000".to_string(),
-            online: false,
+            online:  false,
         },
         ServerInfo {
-            name: "m3".to_string(),
+            name:    "m3".to_string(),
             address: "127.0.0.29:9000".to_string(),
-            online: false,
+            online:  false,
         },
     ];
 
@@ -78,7 +79,10 @@ async fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(State { shared_data }))
+            Ok(Box::new(State {
+                shared_data,
+                points_to_show: 20,
+            }))
         }),
     )
 }
@@ -105,11 +109,10 @@ async fn data_collection_task(shared_data: Arc<Mutex<ServerData>>) {
             servers.iter().map(|server| fetch_data_async(&server.address))
         ).await;
 
-        // Обновляем статусы
         {
             let mut data = shared_data.lock().unwrap();
-            for (i, resp) in responses.iter().enumerate() {
-                data.servers[i].online = resp.is_ok();
+            for (server, resp) in data.servers.iter_mut().zip(responses.iter()) {
+                server.online = resp.is_ok();
             }
         }
 
@@ -144,6 +147,12 @@ impl eframe::App for State {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Настройки");
+                });
+                ui.separator();
+                ui.heading("Настройки графика");
+                ui.horizontal(|ui| {
+                    ui.label("Точек на графике:");
+                    ui.add(egui::DragValue::new(&mut self.points_to_show).range(2..=500));
                 });
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical(|ui| {
@@ -214,12 +223,12 @@ impl eframe::App for State {
                 .y_axis_label("signal")
                 .show(ui, |plot_ui| {
                     let computed_results = &data.computed_results;
-                    let start_index = computed_results.len().saturating_sub(20);
-                    let last_20 = &computed_results[start_index..];
+                    let start_index = computed_results.len().saturating_sub(self.points_to_show);
+                    let last_points = &computed_results[start_index..];
 
                     // Генерация линий для всех данных
                     for (i, server) in data.servers.iter().enumerate() {
-                        let points: PlotPoints = last_20
+                        let points: PlotPoints = last_points
                             .iter()
                             .map(|r| [r.timestamp as f64, r.flow.get(i).copied().unwrap_or(0.0)])
                             .collect();
@@ -235,22 +244,22 @@ async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
     let mut stream = TcpStream::connect(address).await?;
     stream.write_all(b"rffff0").await?;
 
-    let mut response = Vec::with_capacity(128);
+    let mut response = Vec::new();
     let mut buf = [0u8; 1024];
     
-    let start = Instant::now();
-    loop {
-        let read = stream.read(&mut buf).await?;
-        if read == 0 { break; }
-        response.extend_from_slice(&buf[..read]);
-        
-        if start.elapsed() > Duration::from_secs(3) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut, 
-                "Response timeout"
-            ));
+    // Используем встроенный timeout вместо ручной проверки
+    match tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let read = stream.read(&mut buf).await?;
+            if read == 0 { break; }
+            response.extend_from_slice(&buf[..read]);
         }
+        Ok(String::from_utf8_lossy(&response).into())
+    }).await {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut, 
+            "Response timeout"
+        )),
     }
-    
-    Ok(String::from_utf8_lossy(&response).into())
 }
