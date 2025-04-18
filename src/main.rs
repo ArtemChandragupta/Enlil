@@ -100,11 +100,7 @@ async fn data_collection_task(
     loop {
         interval.tick().await;
 
-        let collect = {
-            let is_collecting = is_collecting.lock().unwrap();
-            *is_collecting
-        };
-
+        let collect = { *is_collecting.lock().unwrap() };
         if !collect {
             continue;
         }
