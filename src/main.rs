@@ -41,45 +41,134 @@ struct ServerInfo {
 
 #[tokio::main]
 async fn main() -> eframe::Result {
-    // Инициализация стандартных серверов
-    let servers = vec![
-        ServerInfo {
-            name:    "m1".to_string(),
-            address: "127.0.0.27:9000".to_string(),
-            online:  false,
-        },
-        ServerInfo {
-            name:    "m2".to_string(),
-            address: "127.0.0.28:9000".to_string(),
-            online:  false,
-        },
-        ServerInfo {
-            name:    "m3".to_string(),
-            address: "127.0.0.29:9000".to_string(),
-            online:  false,
-        },
-    ];
-
-    // Общие данные для потоков
-    let shared_data = Arc::new(Mutex::new(ServerData {
-        computed_results: Vec::new(),
-        servers,
-    }));
-
+    let servers       = create_default_servers();
+    let shared_data   = Arc::new(Mutex::new(ServerData::new(servers)));
     let is_collecting = Arc::new(Mutex::new(false));
-    let is_collecting_clone = is_collecting.clone();
     
-    // Запускаем поток сбора данных
-    let data_clone = shared_data.clone();
-    tokio::spawn(async move {
-        data_collection_task(data_clone, is_collecting_clone).await
-    });
+    start_data_collection_task(shared_data.clone(), is_collecting.clone());
+    run_gui(shared_data, is_collecting).await
+}
 
-    // Запускаем GUI
-    let options = eframe::NativeOptions::default();
+// Инициализация ===========================================================
+
+fn create_default_servers() -> Vec<ServerInfo> {
+    vec![
+        ServerInfo::new("m1", "127.0.0.27:9000"),
+        ServerInfo::new("m2", "127.0.0.28:9000"),
+        ServerInfo::new("m3", "127.0.0.29:9000"),
+    ]
+}
+
+impl ServerInfo {
+    fn new(name: &str, address: &str) -> Self {
+        Self {
+            name:    name.to_string(),
+            address: address.to_string(),
+            online:  false,
+        }
+    }
+}
+
+impl ServerData {
+    fn new(servers: Vec<ServerInfo>) -> Self {
+        Self {
+            computed_results: Vec::new(),
+            servers,
+        }
+    }
+}
+
+// Логика сбора данных =====================================================
+
+fn start_data_collection_task(
+    shared_data:   Arc<Mutex<ServerData>>,
+    is_collecting: Arc<Mutex<bool>>,
+) {
+    tokio::spawn(async move {
+        data_collection_loop(shared_data, is_collecting).await
+    });
+}
+
+async fn data_collection_loop(
+    shared_data:   Arc<Mutex<ServerData>>,
+    is_collecting: Arc<Mutex<bool>>,
+) {
+    let mut interval = time::interval(Duration::from_secs(1));
+    
+    loop {
+        interval.tick().await;
+        if !should_collect(&is_collecting) { continue }
+
+        let timestamp = current_timestamp();
+        let responses = fetch_all_servers(&shared_data).await;
+        process_responses(shared_data.clone(), responses, timestamp).await;
+    }
+}
+
+fn should_collect(is_collecting: &Arc<Mutex<bool>>) -> bool {
+    *is_collecting.lock().unwrap()
+}
+
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
+}
+
+async fn fetch_all_servers(shared_data: &Arc<Mutex<ServerData>>) -> Vec<Result<String, std::io::Error>> {
+    let servers = {
+        let data = shared_data.lock().unwrap();
+        data.servers.clone()
+    };
+    
+    futures::future::join_all(
+        servers.iter().map(|server| fetch_data_async(&server.address))
+    ).await
+}
+
+async fn process_responses(
+    shared_data: Arc<Mutex<ServerData>>,
+    responses:   Vec<Result<String, std::io::Error>>,
+    timestamp:   u64,
+) {
+    let flow = parse_responses(&responses);
+    update_server_statuses(&shared_data, &responses);
+    save_computation_result(shared_data, ComputationResults { timestamp, flow });
+}
+
+fn parse_responses(responses: &[Result<String, std::io::Error>]) -> Vec<f64> {
+    responses
+        .iter()
+        .map(|resp| resp
+            .as_ref()
+            .map(|s| s.parse().unwrap_or(0.0))
+            .unwrap_or(0.0)
+        )
+        .collect()
+}
+
+fn update_server_statuses(shared_data: &Arc<Mutex<ServerData>>, responses: &[Result<String, std::io::Error>]) {
+    let mut data = shared_data.lock().unwrap();
+    for (server, resp) in data.servers.iter_mut().zip(responses.iter()) {
+        server.online = resp.is_ok();
+    }
+}
+
+fn save_computation_result(shared_data: Arc<Mutex<ServerData>>, result: ComputationResults) {
+    let mut data = shared_data.lock().unwrap();
+    data.computed_results.push(result);
+}
+
+// GUI ======================================================================
+
+async fn run_gui(
+    shared_data:   Arc<Mutex<ServerData>>,
+    is_collecting: Arc<Mutex<bool>>
+) -> eframe::Result {
     eframe::run_native(
         "Server Monitoring System",
-        options,
+        eframe::NativeOptions::default(),
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(State {
@@ -91,64 +180,6 @@ async fn main() -> eframe::Result {
     )
 }
 
-async fn data_collection_task(
-    shared_data: Arc<Mutex<ServerData>>,
-    is_collecting: Arc<Mutex<bool>>,
-) {
-    let mut interval = time::interval(Duration::from_secs(1));
-    
-    loop {
-        interval.tick().await;
-
-        let collect = { *is_collecting.lock().unwrap() };
-        if !collect {
-            continue;
-        }
-        
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs();
-
-        // Получаем копию списка серверов
-        let servers = {
-            let data = shared_data.lock().unwrap();
-            data.servers.clone()
-        };
-
-        // Параллельное получение данных со всех серверов 
-        let responses = futures::future::join_all(
-            servers.iter().map(|server| fetch_data_async(&server.address))
-        ).await;
-
-        {
-            let mut data = shared_data.lock().unwrap();
-            for (server, resp) in data.servers.iter_mut().zip(responses.iter()) {
-                server.online = resp.is_ok();
-            }
-        }
-
-        // Собираем данные
-        let flow: Vec<f64> = responses
-            .into_iter()
-            .map(|resp| resp
-                .map(|s| s.parse().unwrap_or(0.0))
-                .unwrap_or(0.0)
-            )
-            .collect();
-
-        let result = ComputationResults {
-            timestamp,
-            flow,
-        };
-
-        let mut data = shared_data.lock().unwrap();
-        data.computed_results.push(result);
-
-    }
-}
-
-// Графический интерфейс
 impl eframe::App for State {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
