@@ -373,6 +373,7 @@ fn render_header(ui: &mut egui::Ui) {
     });
 }
 
+// График
 fn render_plot(ui: &mut egui::Ui, state: &mut State) {
     let data = state.shared_data.lock().unwrap();
     let plot_lines = prepare_plot_lines(&data, state.points_to_show);
@@ -383,11 +384,21 @@ fn render_plot(ui: &mut egui::Ui, state: &mut State) {
         .set_margin_fraction(egui::Vec2::new(0.0, 0.0))
         .x_axis_label("time")
         .y_axis_label("signal")
+        .x_axis_formatter(|value, _| format_seconds(&value))
         .show(ui, |plot_ui| {
             for (line, server) in plot_lines.into_iter().zip(data.servers.iter()) {
                 plot_ui.line(line.name(&server.name));
             }
         });
+}
+
+// Добавим функцию для форматирования секунд
+fn format_seconds(mark: &egui_plot::GridMark) -> String {
+    let total = mark.value as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
 fn prepare_plot_lines(data: &ServerData, points_to_show: usize) -> Vec<Line> {
