@@ -203,6 +203,7 @@ impl eframe::App for State {
     }
 }
 
+// Боковая панель
 fn render_side_panel(ui: &mut egui::Ui, state: &mut State) {
     ui.vertical_centered(|ui| ui.heading("Настройки"));
     ui.separator();
@@ -332,6 +333,7 @@ fn remove_selected_servers(data: &mut ServerData, to_remove: Vec<usize>) {
     }
 }
 
+// Главная панель
 fn render_main_content(ui: &mut egui::Ui, state: &mut State) {
     render_header(ui);
     ui.separator();
@@ -358,9 +360,7 @@ fn render_plot(ui: &mut egui::Ui, state: &mut State) {
 
     Plot::new("combined_plot")
         .legend(Legend::default().position(egui_plot::Corner::RightTop))
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .allow_drag(false)
+        .allow_zoom(false).allow_scroll(false).allow_drag(false)
         .set_margin_fraction(egui::Vec2::new(0.0, 0.0))
         .x_axis_label("time")
         .y_axis_label("signal")
