@@ -22,6 +22,7 @@ struct State {
 struct ServerData {
     computed_results: Vec<ComputationResults>,
     servers:          Vec<ServerInfo>,
+    start_time:       Option<u64>,
 }
 
 // Структура для хранения результатов вычислений
@@ -74,6 +75,7 @@ impl ServerData {
         Self {
             computed_results: Vec::new(),
             servers,
+            start_time: None,
         }
     }
 }
@@ -97,7 +99,6 @@ async fn data_collection_loop(
     
     loop {
         interval.tick().await;
-        // if !should_collect(&is_collecting) { continue }
 
         let responses = fetch_all_servers(&shared_data).await;
         update_server_statuses(&shared_data, &responses);
@@ -148,7 +149,20 @@ fn update_server_statuses(shared_data: &Arc<Mutex<ServerData>>, responses: &[Res
 
 fn save_computation_result(shared_data: Arc<Mutex<ServerData>>, result: ComputationResults) {
     let mut data = shared_data.lock().unwrap();
-    data.computed_results.push(result);
+
+    // Устанавливаем время начала при первом сохранении
+    if data.start_time.is_none() {
+        data.start_time = Some(result.timestamp);
+    }
+    
+    // Вычисляем относительное время
+    let relative_timestamp = result.timestamp - data.start_time.unwrap();
+    let new_result = ComputationResults {
+        timestamp: relative_timestamp,
+        flow: result.flow,
+    };
+
+    data.computed_results.push(new_result);
 }
 
 async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
@@ -236,10 +250,15 @@ fn render_collection_control(ui: &mut egui::Ui, state: &mut State) {
 fn toggle_collection_state(state: &mut State, current_state: bool) {
     let mut is_collecting = state.is_collecting.lock().unwrap();
     *is_collecting = !current_state;
-    
+
+    let mut data = state.shared_data.lock().unwrap();
     if !*is_collecting {
-        let mut data = state.shared_data.lock().unwrap();
+        // Очищаем данные при остановке
         data.computed_results.clear();
+        data.start_time = None;
+    } else {
+        // Сбрасываем время начала при новом сборе
+        data.start_time = None;
     }
 }
 
