@@ -97,16 +97,17 @@ async fn data_collection_loop(
     
     loop {
         interval.tick().await;
-        if !should_collect(&is_collecting) { continue }
+        // if !should_collect(&is_collecting) { continue }
 
-        let timestamp = current_timestamp();
         let responses = fetch_all_servers(&shared_data).await;
-        process_responses(shared_data.clone(), responses, timestamp).await;
-    }
-}
+        update_server_statuses(&shared_data, &responses);
 
-fn should_collect(is_collecting: &Arc<Mutex<bool>>) -> bool {
-    *is_collecting.lock().unwrap()
+        if *is_collecting.lock().unwrap() {
+            let timestamp = current_timestamp();
+            let flow = parse_responses(&responses);
+            save_computation_result(shared_data.clone(), ComputationResults { timestamp, flow });
+        }
+    }
 }
 
 fn current_timestamp() -> u64 {
@@ -121,20 +122,10 @@ async fn fetch_all_servers(shared_data: &Arc<Mutex<ServerData>>) -> Vec<Result<S
         let data = shared_data.lock().unwrap();
         data.servers.clone()
     };
-    
+
     futures::future::join_all(
         servers.iter().map(|server| fetch_data_async(&server.address))
     ).await
-}
-
-async fn process_responses(
-    shared_data: Arc<Mutex<ServerData>>,
-    responses:   Vec<Result<String, std::io::Error>>,
-    timestamp:   u64,
-) {
-    let flow = parse_responses(&responses);
-    update_server_statuses(&shared_data, &responses);
-    save_computation_result(shared_data, ComputationResults { timestamp, flow });
 }
 
 fn parse_responses(responses: &[Result<String, std::io::Error>]) -> Vec<f64> {
@@ -160,6 +151,21 @@ fn save_computation_result(shared_data: Arc<Mutex<ServerData>>, result: Computat
     data.computed_results.push(result);
 }
 
+async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
+    let mut stream = TcpStream::connect(address).await?;
+    stream.write_all(b"rffff0").await?;
+
+    let mut response = Vec::new();
+    match tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response)).await {
+        Ok(Ok(_bytes_read)) => Ok(String::from_utf8_lossy(&response).into_owned()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut, 
+            "Response timeout"
+        )),
+    }
+}
+
 // GUI ======================================================================
 
 async fn run_gui(
@@ -182,165 +188,198 @@ async fn run_gui(
 
 impl eframe::App for State {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_secs(1)); // Обновление каждую секунду
+        ctx.request_repaint_after(Duration::from_secs(1));
         
         egui::SidePanel::right("right_panel")
             .resizable(false)
             .default_width(200.0)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Настройки");
-                });
-                ui.separator();
-                ui.heading("Настройки графика");
-                ui.horizontal(|ui| {
-                    ui.label("Точек на графике:");
-                    ui.add(egui::DragValue::new(&mut self.points_to_show).range(2..=500));
-                });
-
-                // Начало/остановка запросов
-                ui.separator();
-                ui.heading("Управление сбором");
-                let button_text = {
-                    let is_collecting = self.is_collecting.lock().unwrap();
-                    if *is_collecting { "⏹ Остановить сбор" } else { "▶ Начать сбор" }
-                };
-                if ui.button(button_text).clicked() {
-                    let new_state = {
-                        let mut is_collecting = self.is_collecting.lock().unwrap();
-                        *is_collecting = !*is_collecting;
-                        *is_collecting
-                    };
-
-                    if !new_state {
-                        let mut data = self.shared_data.lock().unwrap();
-                        data.computed_results.clear();
-                    }
-                }
-
-                // Список опрашиваемых серверов
-                ui.separator();
-                ui.vertical(|ui| {
-                    let is_collecting = {
-                        let is_collecting = self.is_collecting.lock().unwrap();
-                        *is_collecting
-                    };
-
-                    let mut data = self.shared_data.lock().unwrap();
-                    let mut to_remove = Vec::new();
-
-                    ui.horizontal(|ui| {
-                        ui.heading("Серверы");
-                        if !is_collecting && ui.button("+ добавить").clicked() {
-                            let len = data.servers.len() + 1;
-                            data.servers.push(
-                                ServerInfo {
-                                    name: format!("m{}", len),
-                                    address: "127.0.0.1:9000".to_string(),
-                                    online: false,
-                                },
-                            )
-                        }
-                    });
-
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (index,server) in data.servers.iter_mut().enumerate() {
-                            ui.add_space(10.0);
-                            ui.group(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label("Имя:");
-                                    ui.add_enabled(
-                                        !is_collecting,
-                                        egui::TextEdit::singleline(&mut server.address)
-                                    );
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("Адрес:");
-                                    ui.add_enabled(
-                                        !is_collecting,
-                                        egui::TextEdit::singleline(&mut server.address)
-                                    );
-                                });
-
-                                let status = if server.online {
-                                    "✅ Online"
-                                } else {
-                                    "❌ Offline"
-                                };
-
-                                ui.horizontal(|ui| {
-                                    ui.label(status);
-                                    // Сохраняем индекс при нажатии кнопки
-                                    if !is_collecting && ui.button("-").clicked() {
-                                        to_remove.push(index);
-                                    }
-                                });
-                            });
-                        }
-
-                        for &index in to_remove.iter().rev() {
-                            data.servers.remove(index);
-                        }
-
-                    }); 
-                });
+                render_side_panel(ui, self);
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let icon = egui::include_image!("../assets/logo_big.svg");
-                ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
-                ui.vertical(|ui| {
-                    ui.heading("Real-time Server Monitoring");
-                    egui::widgets::global_theme_preference_buttons(ui);
-                    if ui.button("Save to excell and quit").clicked() {
-                        // let data = self.shared_data.lock().unwrap();
-                        // save_to_excel(&data.computed_results);
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-            });
-
-            ui.separator();
-
-            let data = self.shared_data.lock().unwrap();
-
-            Plot::new("combined_plot")
-                .legend(Legend::default().position(egui_plot::Corner::RightTop))
-                .allow_zoom(false).allow_scroll(false).allow_drag(false)
-                .set_margin_fraction(egui::Vec2::new(0.0, 0.0))
-                .x_axis_label("time")
-                .y_axis_label("signal")
-                .show(ui, |plot_ui| {
-                    let computed_results = &data.computed_results;
-                    let start_index = computed_results.len().saturating_sub(self.points_to_show);
-                    let last_points = &computed_results[start_index..];
-
-                    // Генерация линий для всех данных
-                    for (i, server) in data.servers.iter().enumerate() {
-                        let points: PlotPoints = last_points
-                            .iter()
-                            .map(|r| [r.timestamp as f64, r.flow.get(i).copied().unwrap_or(0.0)])
-                            .collect();
-                        
-                        plot_ui.line(Line::new(points).name(&server.name));
-                    }
-                });
-        }); 
+            render_main_content(ui, self);
+        });
     }
 }
 
-async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
-    let mut stream = TcpStream::connect(address).await?;
-    stream.write_all(b"rffff0").await?;
+fn render_side_panel(ui: &mut egui::Ui, state: &mut State) {
+    ui.vertical_centered(|ui| ui.heading("Настройки"));
+    ui.separator();
+    
+    render_plot_settings(ui, state);
+    render_collection_control(ui, state);
+    render_server_list(ui, state);
+}
 
-    let mut response = Vec::new();
-    match tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response)).await {
-        Ok(Ok(_bytes_read)) => Ok(String::from_utf8_lossy(&response).into_owned()),
-        Ok(Err(e)) => Err(e),
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut, 
-            "Response timeout"
-        )),
+fn render_plot_settings(ui: &mut egui::Ui, state: &mut State) {
+    ui.heading("Настройки графика");
+    ui.horizontal(|ui| {
+        ui.label("Точек на графике:");
+        ui.add(egui::DragValue::new(&mut state.points_to_show).range(2..=500));
+    });
+}
+
+fn render_collection_control(ui: &mut egui::Ui, state: &mut State) {
+    ui.separator();
+    ui.heading("Управление сбором");
+    
+    let is_collecting = *state.is_collecting.lock().unwrap();
+    let button_text = if is_collecting { "⏹ Остановить сбор" } else { "▶ Начать сбор" };
+    
+    if ui.button(button_text).clicked() {
+        toggle_collection_state(state, is_collecting);
     }
+}
+
+fn toggle_collection_state(state: &mut State, current_state: bool) {
+    let mut is_collecting = state.is_collecting.lock().unwrap();
+    *is_collecting = !current_state;
+    
+    if !*is_collecting {
+        let mut data = state.shared_data.lock().unwrap();
+        data.computed_results.clear();
+    }
+}
+
+fn render_server_list(ui: &mut egui::Ui, state: &mut State) {
+    ui.separator();
+    ui.vertical(|ui| {
+        let is_collecting = *state.is_collecting.lock().unwrap();
+        let mut data = state.shared_data.lock().unwrap();
+        let mut to_remove = Vec::new();
+
+        render_server_list_header(ui, &mut data, is_collecting);
+        render_servers(ui, &mut data, is_collecting, &mut to_remove);
+        remove_selected_servers(&mut data, to_remove);
+    });
+}
+
+fn render_server_list_header(ui: &mut egui::Ui, data: &mut ServerData, is_collecting: bool) {
+    ui.horizontal(|ui| {
+        ui.heading("Серверы");
+        if !is_collecting && ui.button("+ добавить").clicked() {
+            add_new_server(data);
+        }
+    });
+}
+
+fn add_new_server(data: &mut ServerData) {
+    let len = data.servers.len() + 1;
+    data.servers.push(ServerInfo {
+        name: format!("m{}", len),
+        address: "127.0.0.1:9000".to_string(),
+        online: false,
+    });
+}
+
+fn render_servers(
+    ui: &mut egui::Ui,
+    data: &mut ServerData,
+    is_collecting: bool,
+    to_remove: &mut Vec<usize>,
+) {
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for (index, server) in data.servers.iter_mut().enumerate() {
+            ui.add_space(10.0);
+            render_server_entry(ui, server, is_collecting, index, to_remove);
+        }
+    });
+}
+
+fn render_server_entry(
+    ui: &mut egui::Ui,
+    server: &mut ServerInfo,
+    is_collecting: bool,
+    index: usize,
+    to_remove: &mut Vec<usize>,
+) {
+    ui.group(|ui| {
+        render_server_fields(ui, server, is_collecting);
+        render_server_status(ui, server, is_collecting, index, to_remove);
+    });
+}
+
+fn render_server_fields(ui: &mut egui::Ui, server: &mut ServerInfo, is_collecting: bool) {
+    ui.horizontal(|ui| {
+        ui.label("Имя:");
+        ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.name));
+    });
+    ui.horizontal(|ui| {
+        ui.label("Адрес:");
+        ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.address));
+    });
+}
+
+fn render_server_status(
+    ui: &mut egui::Ui,
+    server: &ServerInfo,
+    is_collecting: bool,
+    index: usize,
+    to_remove: &mut Vec<usize>,
+) {
+    ui.horizontal(|ui| {
+        ui.label(if server.online { "✅ Online" } else { "❌ Offline" });
+        if !is_collecting && ui.button("-").clicked() {
+            to_remove.push(index);
+        }
+    });
+}
+
+fn remove_selected_servers(data: &mut ServerData, to_remove: Vec<usize>) {
+    for &index in to_remove.iter().rev() {
+        data.servers.remove(index);
+    }
+}
+
+fn render_main_content(ui: &mut egui::Ui, state: &mut State) {
+    render_header(ui);
+    ui.separator();
+    render_plot(ui, state);
+}
+
+fn render_header(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        let icon = egui::include_image!("../assets/logo_big.svg");
+        ui.add(egui::Image::new(icon).fit_to_exact_size(egui::Vec2::new(64.0, 64.0)));
+        ui.vertical(|ui| {
+            ui.heading("Real-time Server Monitoring");
+            egui::widgets::global_theme_preference_buttons(ui);
+            if ui.button("Save to excel and quit").clicked() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        });
+    });
+}
+
+fn render_plot(ui: &mut egui::Ui, state: &mut State) {
+    let data = state.shared_data.lock().unwrap();
+    let plot_lines = prepare_plot_lines(&data, state.points_to_show);
+
+    Plot::new("combined_plot")
+        .legend(Legend::default().position(egui_plot::Corner::RightTop))
+        .allow_zoom(false)
+        .allow_scroll(false)
+        .allow_drag(false)
+        .set_margin_fraction(egui::Vec2::new(0.0, 0.0))
+        .x_axis_label("time")
+        .y_axis_label("signal")
+        .show(ui, |plot_ui| {
+            for (line, server) in plot_lines.into_iter().zip(data.servers.iter()) {
+                plot_ui.line(line.name(&server.name));
+            }
+        });
+}
+
+fn prepare_plot_lines(data: &ServerData, points_to_show: usize) -> Vec<Line> {
+    let computed_results = &data.computed_results;
+    let start_index = computed_results.len().saturating_sub(points_to_show);
+    
+    (0..data.servers.len()).map(|i| {
+        let points: PlotPoints = computed_results[start_index..]
+            .iter()
+            .map(|r| [r.timestamp as f64, r.flow.get(i).copied().unwrap_or(0.0)])
+            .collect();
+        Line::new(points)
+    }).collect()
 }
