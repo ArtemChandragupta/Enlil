@@ -119,10 +119,7 @@ fn current_timestamp() -> u64 {
 }
 
 async fn fetch_all_servers(shared_data: &Arc<Mutex<ServerData>>) -> Vec<Result<String, std::io::Error>> {
-    let servers = {
-        let data = shared_data.lock().unwrap();
-        data.servers.clone()
-    };
+    let servers = shared_data.lock().unwrap().servers.clone();
 
     futures::future::join_all(
         servers.iter().map(|server| fetch_data_async(&server.address))
