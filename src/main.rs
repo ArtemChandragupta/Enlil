@@ -106,7 +106,7 @@ async fn data_collection_loop(
         if *is_collecting.lock().unwrap() {
             let timestamp = current_timestamp();
             let flow = parse_responses(&responses);
-            save_computation_result(shared_data.clone(), ComputationResults { timestamp, flow });
+            save_computation_result(&shared_data.clone(), ComputationResults { timestamp, flow });
         }
     }
 }
@@ -147,7 +147,7 @@ fn update_server_statuses(shared_data: &Arc<Mutex<ServerData>>, responses: &[Res
     }
 }
 
-fn save_computation_result(shared_data: Arc<Mutex<ServerData>>, result: ComputationResults) {
+fn save_computation_result(shared_data: &Arc<Mutex<ServerData>>, result: ComputationResults) {
     let mut data = shared_data.lock().unwrap();
 
     // Устанавливаем время начала при первом сохранении
