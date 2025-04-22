@@ -167,7 +167,7 @@ async fn fetch_data_async(address: &str) -> Result<String, std::io::Error> {
     stream.write_all(b"rffff0").await?;
 
     let mut response = Vec::new();
-    match tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response)).await {
+    match tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut response)).await {
         Ok(Ok(_bytes_read)) => Ok(String::from_utf8_lossy(&response).into_owned()),
         Ok(Err(e)) => Err(e),
         Err(_) => Err(std::io::Error::new(
@@ -200,7 +200,7 @@ async fn run_gui(
 impl eframe::App for State {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_secs(1));
-        
+
         egui::SidePanel::right("right_panel")
             .resizable(false)
             .default_width(200.0)
@@ -218,7 +218,7 @@ impl eframe::App for State {
 fn render_side_panel(ui: &mut egui::Ui, state: &mut State) {
     ui.vertical_centered(|ui| ui.heading("Настройки"));
     ui.separator();
-    
+
     render_plot_settings(ui, state);
     render_collection_control(ui, state);
     render_server_list(ui, state);
@@ -312,34 +312,20 @@ fn render_server_entry(
     to_remove: &mut Vec<usize>,
 ) {
     ui.group(|ui| {
-        render_server_fields(ui, server, is_collecting);
-        render_server_status(ui, server, is_collecting, index, to_remove);
-    });
-}
-
-fn render_server_fields(ui: &mut egui::Ui, server: &mut ServerInfo, is_collecting: bool) {
-    ui.horizontal(|ui| {
-        ui.label("Имя:");
-        ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.name));
-    });
-    ui.horizontal(|ui| {
-        ui.label("Адрес:");
-        ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.address));
-    });
-}
-
-fn render_server_status(
-    ui: &mut egui::Ui,
-    server: &ServerInfo,
-    is_collecting: bool,
-    index: usize,
-    to_remove: &mut Vec<usize>,
-) {
-    ui.horizontal(|ui| {
-        ui.label(if server.online { "✅ Online" } else { "❌ Offline" });
-        if !is_collecting && ui.button("-").clicked() {
-            to_remove.push(index);
-        }
+        ui.horizontal(|ui| {
+            ui.label("Имя:");
+            ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.name));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Адрес:");
+            ui.add_enabled(!is_collecting, egui::TextEdit::singleline(&mut server.address));
+        });
+        ui.horizontal(|ui| {
+            ui.label(if server.online { "✅ Online" } else { "❌ Offline" });
+            if !is_collecting && ui.button("-").clicked() {
+                to_remove.push(index);
+            }
+        });
     });
 }
 
